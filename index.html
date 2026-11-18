@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Переулок</title>
-  <script type="module" crossorigin src="./assets/index-_-ZAF0-g.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-YGwMpFsQ.css">
+  <script type="module" crossorigin src="./assets/index-Bk5zJ4yb.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-BL8Tt3p7.css">
 </head>
 <body>
   <main id="view" aria-label="Игровой переулок"></main>
@@ -19,7 +19,12 @@
   <div id="menu">
     <section>
       <h1 id="title">Переулок</h1>
-      <p id="message">Пробеги до оранжевой двери. Враги стреляют из-за баков.</p>
+      <p id="message">Пробеги до оранжевой двери. Враги прячутся за баками в боковых проходах.</p>
+      <div class="setting">
+        <label for="sensitivity">Чувствительность мыши</label>
+        <output id="sensitivity-value" for="sensitivity">45%</output>
+        <input id="sensitivity" type="range" min="10" max="150" step="5" value="45">
+      </div>
       <button id="start" type="button">Играть <span>↗</span></button>
     </section>
   </div>
