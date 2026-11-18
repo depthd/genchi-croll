@@ -59,7 +59,7 @@ scene.add(moon);
 const camera = new THREE.PerspectiveCamera(67, 1, .035, 100);
 camera.rotation.order = 'YXZ';
 scene.add(camera);
-const { colliders, covers } = buildCity(scene);
+const { colliders, ambushes } = buildCity(scene);
 scene.updateMatrixWorld(true);
 const walls = colliders.map((mesh) => new THREE.Box3().setFromObject(mesh));
 
@@ -104,7 +104,8 @@ const rain = new THREE.LineSegments(rainGeometry, new THREE.LineBasicMaterial({
 rain.frustumCulled = false;
 scene.add(rain);
 
-const enemies = covers.map(({ x, z, side }, i) => {
+const enemies = ambushes.map(({ kind, x, z, peekX, peekZ }) => {
+  const standing = kind === 'corner';
   const group = new THREE.Group();
   scene.add(group);
   const head = block(group, silver, 0, .27, 0, .31, .29, .28);
@@ -114,13 +115,18 @@ const enemies = covers.map(({ x, z, side }, i) => {
   for (const side of [-1, 1]) {
     block(group, silver, side * .3, -.035, .015, .15, .21, .20);
     block(group, darkSteel, side * .31, -.15, .12, .125, .12, .31);
-    block(group, darkSteel, side * .15, -.33, .025, .14, .28, .19);
-    block(group, charcoal, side * .15, -.44, .13, .15, .12, .32);
+    if (standing) {
+      block(group, darkSteel, side * .15, -.49, .025, .14, .58, .19);
+      block(group, silver, side * .15, -.96, .025, .13, .41, .16);
+    } else {
+      block(group, darkSteel, side * .15, -.33, .025, .14, .28, .19);
+    }
+    block(group, charcoal, side * .15, standing ? -1.19 : -.44, .13, .15, .12, .32);
   }
   block(group, charcoal, -.30, -.125, .32, .11, .10, .20);
   const muzzle = block(group, burst, -.30, -.12, .48, .19, .14, .19);
   muzzle.visible = false;
-  return { x: x + side * 1.05, z, group, head, chest, muzzle, index: i };
+  return { x, z, peekX, peekZ, standing, group, head, chest, muzzle };
 });
 
 const keys = new Set();
@@ -197,7 +203,7 @@ function reset() {
   cooldown = recoil = reloadTime = hurt = hitMark = 0;
   for (const enemy of enemies) {
     enemy.group.visible = true;
-    enemy.group.position.set(enemy.x, .48, enemy.z);
+    enemy.group.position.set(enemy.x, enemy.standing ? 1.25 : .46, enemy.z);
     enemy.muzzle.visible = false;
     enemy.health = 2;
     enemy.alert = null;
@@ -288,19 +294,23 @@ function move(dt) {
 function updateEnemies(dt) {
   for (const enemy of enemies) {
     if (enemy.health <= 0) continue;
-    const { group, index } = enemy;
+    const { group, standing } = enemy;
     group.rotation.y = Math.atan2(camera.position.x - group.position.x, camera.position.z - group.position.z);
     if (enemy.alert === null && camera.position.distanceTo(group.position) < 19) {
-      to.set(enemy.x, 1.65, enemy.z);
+      to.set(enemy.x + enemy.peekX, 1.65, enemy.z + enemy.peekZ);
       if (!hasCover(camera.position, to)) enemy.alert = runTime;
     }
-    const age = enemy.alert === null ? -1 : runTime - enemy.alert - .25 * index;
+    const age = enemy.alert === null ? -1 : runTime - enemy.alert;
     const cycle = Math.floor(age / 3.1);
     const phase = age % 3.1;
     const exposure = age < 0 ? 0 :
       THREE.MathUtils.smoothstep(phase, .56, .91) * (1 - THREE.MathUtils.smoothstep(phase, 1.96, 2.28));
-    group.position.z = enemy.z + exposure * .54;
-    group.position.y = THREE.MathUtils.lerp(group.position.y, .46 + exposure * .91, Math.min(1, 21 * dt));
+    const blend = Math.min(1, 21 * dt);
+    group.position.x = THREE.MathUtils.lerp(group.position.x, enemy.x + exposure * enemy.peekX, blend);
+    group.position.z = THREE.MathUtils.lerp(group.position.z, enemy.z + exposure * enemy.peekZ, blend);
+    if (!standing) {
+      group.position.y = THREE.MathUtils.lerp(group.position.y, .46 + exposure * .91, blend);
+    }
     enemy.muzzle.visible = false;
     if (phase < 1.33 || phase > 1.94 || enemy.cycle === cycle) continue;
     from.copy(group.position);

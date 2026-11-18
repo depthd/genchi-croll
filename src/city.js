@@ -112,8 +112,8 @@ export function buildCity(scene) {
     { side: -1, z: -24 },
     { side: 1, z: -36 }
   ];
-  const halfOpening = 3;
-  const buildingDepth = 13;
+  const halfOpening = 1.55;
+  const buildingDepth = 5;
   const end = tiled(bricks, 4, 5);
   const sidewalk = tiled(concrete, 1, 14);
 
@@ -141,12 +141,13 @@ export function buildCity(scene) {
     for (const branch of branches.filter((branch) => branch.side === side)) {
       facade(side, near, branch.z + halfOpening);
       near = branch.z - halfOpening;
-      wall(side * 15.8, 5, branch.z, 1, 10, 2 * halfOpening, end);
-      block(scene, frames, side * 15.26, 1.45, branch.z, .12, 2.9, 2.7);
-      block(scene, pipe, side * 10, 3.1, branch.z - 2.94, 11.7, .17, .18);
-      block(scene, glow('#a698ff'), side * 8, 3.4, branch.z - 2.9, 2.4, .09, .13);
+      wall(side * 9, 5, branch.z, 1, 10, 2 * halfOpening, end);
+      wall(side * 5.5, 2.4, branch.z + 1.1, .62, 4.8, .95, end);
+      block(scene, frames, side * 8.44, 1.45, branch.z, .12, 2.9, 1.65);
+      block(scene, pipe, side * 6.25, 3.1, branch.z - 1.46, 4.3, .17, .18);
+      block(scene, glow('#a698ff'), side * 6.3, 3.4, branch.z - 1.43, 1.65, .09, .13);
       const lamp = new THREE.PointLight('#8c87ff', 40, 13, 1.65);
-      lamp.position.set(side * 8, 2.8, branch.z - 2);
+      lamp.position.set(side * 6.5, 2.8, branch.z - 1);
       scene.add(lamp);
     }
     facade(side, near, -49.5);
@@ -189,18 +190,26 @@ export function buildCity(scene) {
     scene.add(puddle);
   }
 
-  const covers = branches.map(({ side, z }) => ({ x: side * 7.5, z, side }));
-  for (const { x, z, side } of covers) {
-    // The lid and bin are physical cover. The long face points into the main alley.
-    wall(x, .55, z, 1.12, 1.02, 2.18, green);
-    wall(x, 1.075, z, 1.23, .13, 2.29, black);
-    block(scene, rail, x, .94, z, 1.18, .14, 2.23);
-    for (let i = -4; i <= 4; i++) block(scene, frames, x, 1.15, z + i * .234, 1.13, .038, .038);
+  const bins = [
+    { x: 2.25, z: -7 },
+    { x: -2.3, z: -19 },
+    { x: 2.3, z: -31 }
+  ];
+  for (const { x, z } of bins) {
+    wall(x, .55, z, 2.18, 1.02, 1.12, green);
+    wall(x, 1.075, z, 2.29, .13, 1.23, black);
+    block(scene, rail, x, .94, z, 2.23, .14, 1.18);
+    for (let i = -4; i <= 4; i++) block(scene, frames, x + i * .234, 1.15, z, .038, .038, 1.13);
     for (const edge of [-1, 1]) {
-      block(scene, rail, x - side * .57, .58, z + edge * 1.05, .105, .75, .14);
-      block(scene, black, x - side * .39, .075, z + edge * .78, .15, .15, .17);
+      block(scene, rail, x + edge * 1.05, .58, z + .57, .14, .75, .105);
+      block(scene, black, x + edge * .78, .075, z + .39, .17, .15, .15);
     }
   }
+
+  const ambushes = [
+    ...bins.map(({ x, z }) => ({ kind: 'bin', x, z: z - 1.05, peekX: -Math.sign(x) * .48, peekZ: 0 })),
+    ...branches.map(({ side, z }) => ({ kind: 'corner', x: side * 6.35, z: z + .96, peekX: 0, peekZ: -.98 }))
+  ];
 
   wall(0, 5.5, -47, 8, 11, 1, tiled(concrete, 3, 4));
   block(scene, solid('#693b29'), 0, 1.38, -46.44, 2.12, 2.76, .13);
@@ -211,5 +220,5 @@ export function buildCity(scene) {
   const exitLight = new THREE.PointLight('#ff8744', 45, 13, 1.7);
   exitLight.position.set(0, 2.5, -44.8);
   scene.add(exitLight);
-  return { colliders, covers };
+  return { colliders, ambushes };
 }
