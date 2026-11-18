@@ -10,6 +10,32 @@ const hud = document.querySelector('#hud');
 const timeReadout = document.querySelector('#time');
 const ammoReadout = document.querySelector('#ammo');
 const damage = document.querySelector('#damage');
+const sensitivityControl = document.querySelector('#sensitivity');
+const sensitivityValue = document.querySelector('#sensitivity-value');
+const sensitivityKey = 'genchi-mouse-sensitivity';
+const originalSensitivity = .00235;
+let sensitivity = Number(sensitivityControl.value);
+try {
+  const saved = localStorage.getItem(sensitivityKey);
+  if (saved !== null) sensitivityControl.value = saved;
+} catch {
+  // Settings still work this session if storage is unavailable.
+}
+
+function readSensitivity() {
+  sensitivity = Number(sensitivityControl.value);
+  sensitivityValue.textContent = `${sensitivity}%`;
+}
+
+readSensitivity();
+sensitivityControl.addEventListener('input', () => {
+  readSensitivity();
+  try {
+    localStorage.setItem(sensitivityKey, sensitivityControl.value);
+  } catch {
+    // The active setting is already applied.
+  }
+});
 
 let renderer;
 try {
@@ -78,7 +104,7 @@ const rain = new THREE.LineSegments(rainGeometry, new THREE.LineBasicMaterial({
 rain.frustumCulled = false;
 scene.add(rain);
 
-const enemies = covers.map(({ x, z }, i) => {
+const enemies = covers.map(({ x, z, side }, i) => {
   const group = new THREE.Group();
   scene.add(group);
   const head = block(group, silver, 0, .27, 0, .31, .29, .28);
@@ -94,7 +120,7 @@ const enemies = covers.map(({ x, z }, i) => {
   block(group, charcoal, -.30, -.125, .32, .11, .10, .20);
   const muzzle = block(group, burst, -.30, -.12, .48, .19, .14, .19);
   muzzle.visible = false;
-  return { x, z: z - 1.05, group, head, chest, muzzle, index: i };
+  return { x: x + side * 1.05, z, group, head, chest, muzzle, index: i };
 });
 
 const keys = new Set();
@@ -264,13 +290,16 @@ function updateEnemies(dt) {
     if (enemy.health <= 0) continue;
     const { group, index } = enemy;
     group.rotation.y = Math.atan2(camera.position.x - group.position.x, camera.position.z - group.position.z);
-    if (enemy.alert === null && camera.position.distanceTo(group.position) < 19) enemy.alert = runTime;
+    if (enemy.alert === null && camera.position.distanceTo(group.position) < 19) {
+      to.set(enemy.x, 1.65, enemy.z);
+      if (!hasCover(camera.position, to)) enemy.alert = runTime;
+    }
     const age = enemy.alert === null ? -1 : runTime - enemy.alert - .25 * index;
     const cycle = Math.floor(age / 3.1);
     const phase = age % 3.1;
     const exposure = age < 0 ? 0 :
       THREE.MathUtils.smoothstep(phase, .56, .91) * (1 - THREE.MathUtils.smoothstep(phase, 1.96, 2.28));
-    group.position.x = enemy.x - Math.sign(enemy.x) * exposure * .54;
+    group.position.z = enemy.z + exposure * .54;
     group.position.y = THREE.MathUtils.lerp(group.position.y, .46 + exposure * .91, Math.min(1, 21 * dt));
     enemy.muzzle.visible = false;
     if (phase < 1.33 || phase > 1.94 || enemy.cycle === cycle) continue;
@@ -372,8 +401,9 @@ document.addEventListener('keydown', (event) => {
 document.addEventListener('keyup', (event) => keys.delete(event.code));
 document.addEventListener('mousemove', (event) => {
   if (state !== 'playing' || document.pointerLockElement !== renderer.domElement) return;
-  yaw -= event.movementX * .00235;
-  pitch -= event.movementY * .00235;
+  const scale = originalSensitivity * sensitivity / 100;
+  yaw -= event.movementX * scale;
+  pitch -= event.movementY * scale;
 });
 renderer.domElement.addEventListener('mousedown', (event) => {
   if (event.button === 0) shoot();

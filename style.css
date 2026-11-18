@@ -22,3 +22,6 @@ body:not(.playing) #crosshair { visibility: hidden; }
 small { display: block; font-size: 10px; letter-spacing: .12em; }
 strong { color: var(--amber); font-size: 34px; }
 #ammo { color: var(--amber); font-size: clamp(13px, 3vw, 24px); letter-spacing: .12em; }
+.setting { display: grid; grid-template-columns: 1fr auto; gap: 8px 14px; align-items: center; width: min(100%, 310px); margin: 20px 0 4px; font-size: 12px; }
+.setting output { color: var(--amber); font-variant-numeric: tabular-nums; }
+.setting input { grid-column: 1 / -1; width: 100%; margin: 0; accent-color: var(--amber); }

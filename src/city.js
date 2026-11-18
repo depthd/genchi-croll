@@ -107,35 +107,56 @@ export function buildCity(scene) {
     return mesh;
   }
 
-  for (const side of [-1, 1]) {
-    const x = side * 5.7;
-    const end = tiled(bricks, 1, 5);
-    const long = tiled(bricks, 19, 5);
-    wall(x, 7, -21, 3.4, 14, 57, [long, long, end, end, end, end]);
-    block(scene, tiled(concrete, 1, 21), side * 3.75, .035, -21, .48, .07, 57);
-    block(scene, pipe, side * 3.91, 4.15, -21, .16, .16, 56);
-    for (let z = 3; z >= -47; z -= 4.2) {
-      block(scene, pipe, side * 3.93, 2.65, z, .13, 5.3, .13);
+  const branches = [
+    { side: 1, z: -12 },
+    { side: -1, z: -24 },
+    { side: 1, z: -36 }
+  ];
+  const halfOpening = 3;
+  const buildingDepth = 13;
+  const end = tiled(bricks, 4, 5);
+  const sidewalk = tiled(concrete, 1, 14);
+
+  function facade(side, near, far) {
+    const length = near - far;
+    const z = (near + far) / 2;
+    const long = tiled(bricks, length / 3, 5);
+    wall(side * (4 + buildingDepth / 2), 7, z, buildingDepth, 14, length, [long, long, end, end, end, end]);
+    block(scene, sidewalk, side * 3.75, .035, z, .48, .07, length);
+    block(scene, pipe, side * 3.91, 4.15, z, .16, .16, length);
+    for (let panel = near - 1.45; panel > far + 1.35; panel -= 4.2) {
+      block(scene, pipe, side * 3.93, 2.65, panel - 1, .13, 5.3, .13);
       for (let y = 3; y < 13; y += 2.8) {
-        const offset = z + .95;
-        block(scene, frames, side * 3.95, y, offset, .12, 1.38, 1.75);
+        block(scene, frames, side * 3.95, y, panel, .12, 1.38, 1.75);
         const shade = glass[Math.floor(random() * glass.length)];
-        block(scene, shade, side * 3.88, y, offset, .05, 1.04, 1.45);
-        block(scene, frames, side * 3.84, y, offset, .05, 1.08, .065);
-        block(scene, frames, side * 3.84, y + .12, offset, .05, .06, 1.45);
-      }
-      if (z > -34) {
-        const height = 10 + random() * 12;
-        block(scene, tiled(concrete, 2, 5), side * (9 + random() * 6), height / 2, z - 3, 5, height, 5.4);
+        block(scene, shade, side * 3.88, y, panel, .05, 1.04, 1.45);
+        block(scene, frames, side * 3.84, y, panel, .05, 1.08, .065);
+        block(scene, frames, side * 3.84, y + .12, panel, .05, .06, 1.45);
       }
     }
   }
 
+  for (const side of [-1, 1]) {
+    let near = 7.5;
+    for (const branch of branches.filter((branch) => branch.side === side)) {
+      facade(side, near, branch.z + halfOpening);
+      near = branch.z - halfOpening;
+      wall(side * 15.8, 5, branch.z, 1, 10, 2 * halfOpening, end);
+      block(scene, frames, side * 15.26, 1.45, branch.z, .12, 2.9, 2.7);
+      block(scene, pipe, side * 10, 3.1, branch.z - 2.94, 11.7, .17, .18);
+      block(scene, glow('#a698ff'), side * 8, 3.4, branch.z - 2.9, 2.4, .09, .13);
+      const lamp = new THREE.PointLight('#8c87ff', 40, 13, 1.65);
+      lamp.position.set(side * 8, 2.8, branch.z - 2);
+      scene.add(lamp);
+    }
+    facade(side, near, -49.5);
+  }
+
   for (const [x, z, color, title, panel] of [
     [-3.91, -3, 0xff7838, 'РАЙОН', '#702c16'],
-    [3.91, -14, 0x7869ff, 'СВЯЗЬ', '#2c195f'],
-    [-3.91, -26, 0xf43b91, 'НОЧЬ', '#550d3b'],
-    [3.91, -38, 0x29c4dd, 'ЦЕХ', '#104b62']
+    [3.91, -17, 0x7869ff, 'СВЯЗЬ', '#2c195f'],
+    [-3.91, -29, 0xf43b91, 'НОЧЬ', '#550d3b'],
+    [3.91, -41, 0x29c4dd, 'ЦЕХ', '#104b62']
   ]) {
     const light = new THREE.PointLight(color, 24, 14, 1.65);
     light.position.set(x * .72, 2.5, z);
@@ -168,19 +189,16 @@ export function buildCity(scene) {
     scene.add(puddle);
   }
 
-  const covers = [
-    { x: 2.2, z: -10.3 },
-    { x: -2.35, z: -22 },
-    { x: 2.3, z: -34 }
-  ];
-  for (const { x, z } of covers) {
-    wall(x, .55, z, 2.18, 1.02, 1.12, green);
-    block(scene, rail, x, .94, z, 2.23, .14, 1.18);
-    wall(x, 1.075, z, 2.29, .13, 1.23, black);
-    for (let i = -4; i <= 4; i++) block(scene, frames, x + i * .234, 1.15, z, .038, .038, 1.13);
-    for (const side of [-1, 1]) {
-      block(scene, rail, x + side * 1.05, .58, z + .57, .14, .75, .105);
-      block(scene, black, x + side * .78, .075, z + .39, .17, .15, .15);
+  const covers = branches.map(({ side, z }) => ({ x: side * 7.5, z, side }));
+  for (const { x, z, side } of covers) {
+    // The lid and bin are physical cover. The long face points into the main alley.
+    wall(x, .55, z, 1.12, 1.02, 2.18, green);
+    wall(x, 1.075, z, 1.23, .13, 2.29, black);
+    block(scene, rail, x, .94, z, 1.18, .14, 2.23);
+    for (let i = -4; i <= 4; i++) block(scene, frames, x, 1.15, z + i * .234, 1.13, .038, .038);
+    for (const edge of [-1, 1]) {
+      block(scene, rail, x - side * .57, .58, z + edge * 1.05, .105, .75, .14);
+      block(scene, black, x - side * .39, .075, z + edge * .78, .15, .15, .17);
     }
   }
 
