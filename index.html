@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Переулок</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main id="view" aria-label="Игровой переулок"></main>
+  <header><span class="tag">СЕКТОР 01</span><span>ПЕРЕУЛОК</span></header>
+  <div id="crosshair" aria-hidden="true">+</div>
+  <div id="damage" aria-hidden="true"></div>
+  <div id="hud" hidden>
+    <div><small>ДО ДЕАКТИВАЦИИ</small><strong id="time">00.0</strong></div>
+    <div id="ammo" aria-label="Патроны"></div>
+  </div>
+  <div id="menu">
+    <section>
+      <h1 id="title">Переулок</h1>
+      <p id="message">Пробеги до оранжевой двери. Враги стреляют из-за баков.</p>
+      <button id="start" type="button">Играть <span>↗</span></button>
+    </section>
+  </div>
+  <footer><span><kbd>WASD</kbd> ходьба</span><span><kbd>МЫШЬ</kbd> прицел</span><span><kbd>ЛКМ</kbd> выстрел</span><span><kbd>R</kbd> перезарядка</span><span><kbd>ESC</kbd> пауза</span></footer>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

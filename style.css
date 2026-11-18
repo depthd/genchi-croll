@@ -1,0 +1,24 @@
+:root { color-scheme: dark; font-family: ui-monospace, Consolas, monospace; --ink: #e7ecf1; --amber: #ff995a; }
+* { box-sizing: border-box; }
+body { margin: 0; overflow: hidden; background: #0a0d16; color: var(--ink); }
+#view, #damage, #menu { position: fixed; inset: 0; }
+canvas { width: 100%; height: 100%; display: block; image-rendering: pixelated; }
+header, footer { position: fixed; left: 0; right: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 14px; padding: 16px clamp(16px, 4vw, 56px); font-size: 11px; letter-spacing: .12em; }
+header { top: 0; background: linear-gradient(#0a0d16c9, transparent); }
+.tag { color: var(--amber); border: 1px solid #ff995a70; padding: 6px 8px; }
+footer { bottom: 0; color: #a8b3c2; background: linear-gradient(transparent, #0a0d16df); }
+kbd { color: #fff; font: inherit; }
+#menu { display: grid; align-items: center; padding: clamp(24px, 7vw, 110px); background: linear-gradient(90deg, #090b14f2, #090b14a0 36%, transparent 75%); }
+#menu[hidden], #hud[hidden] { display: none; }
+h1 { font-family: Impact, 'Arial Narrow', sans-serif; font-size: clamp(48px, 10vw, 140px); text-transform: uppercase; letter-spacing: -.025em; margin: 0; line-height: .95; }
+p { max-width: 36ch; color: #c0c9d4; line-height: 1.6; font-size: 14px; }
+button { margin-top: 12px; border: 0; background: var(--amber); color: #170c09; padding: 13px 17px; min-width: 148px; font: 800 14px ui-monospace, monospace; cursor: pointer; text-transform: uppercase; }
+button span { float: right; }
+button:hover, button:focus-visible { background: #ffbe91; }
+#crosshair { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; text-shadow: 0 0 4px #000; pointer-events: none; }
+body:not(.playing) #crosshair { visibility: hidden; }
+#damage { pointer-events: none; box-shadow: inset 0 0 120px 40px #eb3636; opacity: 0; }
+#hud { position: fixed; bottom: 58px; inset-inline: clamp(16px, 4vw, 56px); display: flex; align-items: end; justify-content: space-between; pointer-events: none; text-shadow: 0 2px #16111e; }
+small { display: block; font-size: 10px; letter-spacing: .12em; }
+strong { color: var(--amber); font-size: 34px; }
+#ammo { color: var(--amber); font-size: clamp(13px, 3vw, 24px); letter-spacing: .12em; }
