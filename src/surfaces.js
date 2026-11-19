@@ -6,7 +6,7 @@ export function surface(kind,variant=0) {
   const colors={tile:'#2c5754',brick:'#5e2b28',cement:'#6e6558',steel:'#3b3f4e',shutter:'#5a5750',asphalt:'#14151d',crate:'#6b3e22',bin:'#2f4a2a',stripe:'#b9ab58',check:'#2c5754',poster:'#b9ab8c',sign:'#1d2447',graffiti:'#5a5750'};
   let seed=Array.from(key).reduce((a,c)=>Math.imul(a,31)+c.charCodeAt(0)|0,91);
   const rand=()=>((seed=Math.imul(seed,1664525)+1013904223>>>0)/4294967296);
-  const canvas=document.createElement('canvas'); canvas.width=canvas.height=64;
+  const canvas=(typeof document==='undefined'?new OffscreenCanvas(512,512):document.createElement('canvas')); canvas.width=canvas.height=64;
   const c=canvas.getContext('2d'); c.fillStyle=colors[kind]; c.fillRect(0,0,64,64);
   c.fillStyle='#181c28';
   for(let y=0;y<64;y+=8) {

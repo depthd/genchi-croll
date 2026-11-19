@@ -1,4 +1,7 @@
-import {skin,skyline} from './gen/skin.js';
+import {radio} from './radio.js';
+import {steerBot} from './gen/segments.js';
+import {dressing} from './gen/dressing.js';
+import {skyline} from './gen/skin.js';
 import {sequence} from './gen/sequencer.js';
 import {advance} from './gen/physics.js';
 import {stream} from './gen/stream.js';
@@ -69,10 +72,10 @@ const camera = new THREE.PerspectiveCamera(67, 1, .035, 100);
 camera.rotation.order = 'YXZ';
 scene.add(camera);
 const plan=route(campaign.seed), segments=sequence(plan);
-const world=stream(scene,plan,segments,query.get('gen')==='debug'?null:skin(plan));
+const world=stream(scene,plan,segments,query.get('gen')==='debug'?null:dressing(plan));
 const positionTower=skyline(scene,plan);
 const colliders=world.colliders;
-let distance=0;
+let distance=0,botIndex=0,botLayer='G',stuck=0;
 const body={x:0,y:0,z:0,vy:0,grace:0};
 let feet=0, vertical=0, grace=0, jumpQueue=0, vx=0, vz=0, inserted=0, reloadPhase='';
 const darkSteel = solid('#1d2447');
@@ -84,7 +87,8 @@ const burst = glow('#ffbe65');
 const weapon = new THREE.Group();
 camera.add(weapon);
 block(weapon, silver, .035, -.062, .009, .106, .175, .12).rotation.x = -.32;
-block(weapon, charcoal, 0, 0, -.10, .102, .08, .276);
+block(weapon, darkSteel, 0, 0, -.10, .102, .08, .276);
+block(weapon,charcoal,.012,-.053,.005,.087,.14,.085).rotation.x=-.28;
 block(weapon, silver, 0, .063, -.195, .085, .067, .27);
 block(weapon, darkSteel, 0, .088, -.33, .076, .046, .055);
 block(weapon, amber, 0, .114, -.336, .024, .012, .018);
@@ -94,6 +98,10 @@ cylinder.rotation.x = Math.PI / 2;
 cylinder.position.set(0, .016, -.089);
 weapon.add(cylinder);
 for (let i = 0; i < 3; i++) block(weapon, silver, -.025, -.048 - .025 * i, .035 + .013 * i, .063, .025, .062);
+for(let i=0;i<3;i++){
+  block(weapon,darkSteel,.04+i*.024,-.13-i*.012,.078+i*.054,.105,.08,.07);
+  block(weapon,silver,.04+i*.024,-.11-i*.012,.078+i*.054,.086,.028,.056);
+}
 const flash = new THREE.Mesh(new THREE.OctahedronGeometry(.13), burst);
 flash.position.set(0, .069, -.44);
 flash.scale.set(.9, .65, 1.48);
@@ -165,7 +173,8 @@ const direction = new THREE.Vector3();
 const effects = [];
 const flashMaterial = new THREE.LineBasicMaterial({ color: '#ffcf82' });
 const hostileMaterial = new THREE.LineBasicMaterial({ color: '#ff5a4e' });
-let audio;
+let audio,armed=true;
+const dispatch=radio(()=>sound('empty'));
 let state = 'intro';
 let seconds=config.startTime, bodySpeed=0, transfer=0;
 const bodyId=document.querySelector('#body-id'), progress=document.querySelector('#progress'), delta=document.querySelector('#delta');
@@ -228,21 +237,29 @@ function reset() {
   const at=query.get('at')||'';
   const relay=Number(query.get('relay'))||campaign.relay;
   const i=Math.min(segments.length-1,Math.max(0,Number(at.match(/^seg(\d+)$/)?.[1]??named[at]??shots[Number(query.get('shot'))-1]??plan.relays[relay-1]??0)));
-  const layer=query.get('layer')||(at==='upper'||query.get('shot')==='3'?'R':at==='shortcut'||query.get('shot')==='2'?'I':'G');
+  const layer=query.get('layer')||(at==='upper'?'R':at==='shortcut'||query.get('shot')==='2'?'I':'G');
   const port=segments[i].entry[layer]||segments[i].entry.G,c=plan.cells[i];
-  world.sync(i);Object.assign(body,{x:port.x+c.dx*.3,y:port.y,z:port.z+c.dz*.3,vy:0,grace:config.jumpBuffer});
+  botIndex=i;botLayer=layer in config.layers?layer:'G';world.sync(i);Object.assign(body,{x:port.x+c.dx*.3,y:port.y,z:port.z+c.dz*.3,vy:0,grace:config.jumpBuffer});
   camera.position.set(body.x,body.y+config.eye,body.z);distance=i;
   feet=vertical=jumpQueue=vx=vz=0; grace=config.jumpBuffer; reloadPhase='';
   yaw=Math.atan2(-c.dx,-c.dz);pitch=0;camera.rotation.set(0,yaw,0,'YXZ');
   const chassis=campaign.attempts===0?0:(campaign.attempts%3);
   seconds=config.startTime+[0,-10,10][chassis];bodySpeed=[0,.4,-.3][chassis];
   bodyId.textContent='ТЕЛО №'+(campaign.attempts+1)+' · '+['Обычный','Лёгкий','Прочный'][chassis];
+  dispatch.reset();armed=campaign.attempts>0||i>0||query.has('shot')||query.has('bots');
+  weapon.visible=armed;
+  if(query.get('shot')==='4'){camera.position.set(.15,1.55,.15);camera.lookAt(1.35,1.12,-2.4);}
   delta.textContent='';
   runTime = 0;
   ammo = 6;
   cooldown = recoil = reloadTime = hurt = hitMark = 0;
   for(const e of enemies.splice(0))e.group.removeFromParent();
   defeated.clear();syncEnemies();
+  if(query.get('shot')==='5'){
+    const target=enemies.find(e=>e.segment===i);
+    if(target){target.group.position.set(target.x+target.peekX,1.15,target.z+target.peekZ);
+      camera.position.lerp(target.group.position,.55);camera.position.y=1.55;camera.lookAt(target.group.position);}
+  }
   for(const b of bullets.splice(0))b.mesh.removeFromParent();
   for (const { line } of effects.splice(0)) {
     line.removeFromParent();
@@ -285,6 +302,7 @@ function shoot() {
     cooldown = .2;
     return;
   }
+  if(!armed)return;dispatch.say('fire',runTime);
   ammo--;
   cooldown = config.fireDelay;
   recoil = 1;
@@ -303,7 +321,7 @@ function shoot() {
   if (enemy) {
     enemy.health -= hit.object === enemy.head ? 3 : 1;
     enemy.group.visible = enemy.health > 0;
-    if(enemy.health<=0){defeated.add(enemy.segment);const bonus=hit.object===enemy.head?config.headBonus:config.killBonus;seconds=Math.min(config.cap,seconds+bonus);delta.textContent='+'+bonus.toFixed(1);}
+    if(enemy.health<=0){defeated.add(enemy.segment);dispatch.say('kill',runTime);const bonus=hit.object===enemy.head?config.headBonus:config.killBonus;seconds=Math.min(config.cap,seconds+bonus);delta.textContent='+'+bonus.toFixed(1);}
     hitMark = .16;
     enemy.alert ??= runTime;
   }
@@ -324,7 +342,15 @@ function move(dt) {
   vx+=((Math.cos(yaw)*strafe-Math.sin(yaw)*ahead)*stride-vx)*blend;
   vz+=((-Math.sin(yaw)*strafe-Math.cos(yaw)*ahead)*stride-vz)*blend;
   const pos=camera.position;
-  advance(body,world.near,vx*dt,vz*dt,dt,jumpQueue>0);
+  if(query.get('bots')==='1'){
+    const cmd=steerBot(body,segments[botIndex],botLayer,dt);
+    if(cmd.arrived&&botIndex<segments.length-1)botIndex++;
+    if(!cmd.arrived)yaw=Math.atan2(-cmd.dx,-cmd.dz);
+    const ox=body.x,oz=body.z;
+    advance(body,world.near,cmd.dx,cmd.dz,dt,cmd.jump);
+    stuck=!cmd.arrived&&Math.hypot(body.x-ox,body.z-oz)<.0001?stuck+dt:0;
+    if(stuck>1){console.warn('Застревание',plan.seed,botIndex,botLayer);stuck=0;}
+  }else advance(body,world.near,vx*dt,vz*dt,dt,jumpQueue>0);
   if(body.vy>0)jumpQueue=0;
   jumpQueue=Math.max(0,jumpQueue-dt);feet=body.y;grace=body.grace;
   pos.set(body.x,body.y+config.eye,body.z);
@@ -394,7 +420,7 @@ function updateEnemies(dt) {
 
 function update(dt) {
   runTime += dt;
-  if (!query.has('god')) seconds -= dt;
+  if (armed&&!query.has('god')) seconds -= dt;
   cooldown = Math.max(0, cooldown - dt);
   recoil = Math.max(0, recoil - 7 * dt);
   hurt = Math.max(0, hurt - 2.5 * dt);
@@ -412,7 +438,13 @@ function update(dt) {
     }
   }
   move(dt);
-  updateEnemies(dt);projectiles(dt);
+  if(!armed&&(distance>.08||body.y<-.6)){armed=weapon.visible=true;dispatch.say('start',runTime);}
+  if(armed){updateEnemies(dt);projectiles(dt);}
+  if(distance>5)dispatch.say('fork',runTime);
+  if(body.y>7)dispatch.say('roof',runTime);
+  if(body.y>2&&body.y<4)dispatch.say('room',runTime);
+  if(seconds<15)dispatch.say('low',runTime);
+  dispatch.update(runTime);
   const clock=Math.max(0,seconds);
   timeReadout.textContent=String(Math.floor(clock/60)).padStart(2,'0')+':'+(clock%60).toFixed(1).padStart(4,'0');
   timeReadout.style.color=seconds<10?'#ff3b3b':seconds<20?'#ff9a3c':'#7dff1a';
@@ -423,12 +455,12 @@ function update(dt) {
   damage.style.opacity = String(hurt);
   document.querySelector('#crosshair').textContent = hitMark > 0 ? '×' : '+';
   if(seconds<=0){
-    state='transfer'; transfer=0; save(); keys.clear();
+    dispatch.say('death',runTime);state='transfer'; transfer=0; save(); keys.clear();
     title.textContent='Тело №'+campaign.attempts+' деактивировано';
     message.textContent='Сознание переносится… Ближе всех подобрался: '+Math.round(100*campaign.record)+'%';
   }
   else if (distance>segments.length-.14 && Math.abs(body.y)<1.7) {
-    campaign.best=campaign.best===null?runTime:Math.min(runTime,campaign.best);save();
+    dispatch.say('end',runTime);campaign.best=campaign.best===null?runTime:Math.min(runTime,campaign.best);save();
     menu('won', 'Сектор 02 — скоро', `До деактивации оставалось ${seconds.toFixed(1)} с.`, 'Ещё раз');
   }
 }
@@ -440,9 +472,10 @@ function resize() {
 
 let transferClock=performance.now();
 function frame(now) {
-  const dt = Math.min(.045, (now - lastFrame) / 1000);
+  const elapsed=Math.max(.001,(now-lastFrame)/1000);
+  const dt = Math.min(.045,elapsed);
   lastFrame = now;
-  if (state === 'playing') update(dt);
+  if (state === 'playing'){let remaining=Math.min(.25,elapsed);while(remaining>.000001&&state==='playing'){const step=Math.min(1/60,remaining);update(step);remaining-=step;}}
   else if(state==='transfer'){
     transfer+=Math.max(0,(now-transferClock)/1000);
     damage.style.opacity=String(Math.min(1,transfer));
@@ -472,11 +505,11 @@ function frame(now) {
     effects.splice(i, 1);
   }
   if(map.isConnected)drawMap(map,plan,camera.position,segments);
-  rain.position.copy(camera.position);
+  rain.position.copy(camera.position);rain.rotation.y=yaw;
   positionTower(camera.position);
   pixels.render(scene, camera);
   if (stats.isConnected && now - (stats.last || 0) > 500) {
-    stats.textContent = Math.round(1 / dt) + ' кадр/с · вызовы ' + renderer.info.render.calls + ' · треуг. ' + renderer.info.render.triangles + ' · враги ' + enemies.length;
+    stats.textContent = Math.round(1 / elapsed) + ' кадр/с · вызовы ' + renderer.info.render.calls + ' · треуг. ' + renderer.info.render.triangles + ' · враги ' + enemies.length;
     stats.last = now;
   }
   requestAnimationFrame(frame);
@@ -533,6 +566,7 @@ if (query.has('debug')) {
 window.GAME = {camera, enemies, config,plan,segments,world,body,renderer,campaign, get seconds(){return seconds}, get state(){return state}};
 scene.traverse(o => {if (o.material) for (const m of [].concat(o.material)) {if(!m.vertexColors)pixels.snap(m);}});
 reset();
+if(query.get('bots')==='1'){state='playing';hud.hidden=false;overlay.hidden=true;}
 if(query.has('shot')){overlay.hidden=true;document.body.classList.add('photo');}
 resize();
 requestAnimationFrame(frame);

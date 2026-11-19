@@ -3,9 +3,10 @@ import {block} from '../city.js';
 const palette={G:'#5a5750',I:'#6e6558',U:'#2c5754',R:'#3b3f4e',link:'#4fe7ff'};
 export function stream(scene,plan,segments,decorate){
  const active=new Map(), colliders=[];
- let index=-1;
+ let index=-1;const buildTimes=[];
  const materials=Object.fromEntries(Object.entries(palette).map(([k,color])=>[k,new T.MeshLambertMaterial({color,side:T.DoubleSide})]));
  function build(s){
+   const start=performance.now();
    const group=new T.Group(),hits=[];
    for(const p of s.slabs){
      const x=-p.dz*p.w/2,z=p.dx*p.w/2;
@@ -18,7 +19,7 @@ export function stream(scene,plan,segments,decorate){
    }
    const b=s.cover;hits.push(block(group,materials.G,b.x,b.y+b.h/2,b.z,b.w,b.h,b.d));
    if(decorate)decorate(group,s,hits);
-   scene.add(group);group.updateMatrixWorld(true);return {group,hits};
+   scene.add(group);group.updateMatrixWorld(true);buildTimes.push(performance.now()-start);return {group,hits};
  }
  function sync(i){
    if(i===index)return;
@@ -38,5 +39,5 @@ export function stream(scene,plan,segments,decorate){
    }
    sync(best);return best+t/32;
  }
- return {sync,locate,colliders,get index(){return index;},get near(){return segments.slice(Math.max(0,index-1),index+3);},active};
+ return {sync,locate,colliders,buildTimes,get index(){return index;},get near(){return segments.slice(Math.max(0,index-1),index+3);},active};
 }

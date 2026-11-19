@@ -14,7 +14,8 @@ for(let seed=0;seed<seeds;seed++){
    for(const k of layers){
      const parts=s.slabs.filter(p=>!p.link&&p.layer===k);
      const pass=parts.length&&parts.every(p=>canTraverse(p.a,p.b,'ramp'))&&s.jumps.filter(j=>j.layer===k).every(j=>canTraverse(j.a,j.b));
-     const join=!segments[s.i+1]||compatible(s.exit[k],segments[s.i+1].entry[k]);
+     const end=s.exit[k],start=segments[s.i+1]?.entry[k];
+     const join=!start||(compatible(end,start)&&Math.hypot(end.x-start.x,end.z-start.z)<.001);
      if(pass&&join&&next.has(k))live.add(k);
      if(pass&&join&&(k==='G'||exitGround.has(k)))escape.add(k);
    }
@@ -32,6 +33,13 @@ for(let seed=0;seed<seeds;seed++){
      if(Math.abs(bounds.x-other.x-other.dx*16)<32&&Math.abs(bounds.z-other.z-other.dz*16)<32)ok[4]=false;
    }
    const shot={x:s.enemy.x+s.enemy.peekX,z:s.enemy.z+s.enemy.peekZ};
+   for(const other of segments.slice(s.i+2)){
+     if(Math.abs(c.x-plan.cells[other.i].x)>96||Math.abs(c.z-plan.cells[other.i].z)>96)continue;
+     for(const a of s.slabs)for(const b of other.slabs){
+       if(a.maxX>b.minX+.001&&a.minX<b.maxX-.001&&a.maxZ>b.minZ+.001&&a.minZ<b.maxZ-.001&&
+         Math.max(a.a.y,a.b.y)>=Math.min(b.a.y,b.b.y)&&Math.max(b.a.y,b.b.y)>=Math.min(a.a.y,a.b.y))ok[4]=false;
+     }
+   }
    for(let d=0;d<12;d+=.25){
      if(Math.abs(shot.x-c.dx*d-s.cover.x)<s.cover.w/2&&Math.abs(shot.z-c.dz*d-s.cover.z)<s.cover.d/2)ok[8]=false;
    }

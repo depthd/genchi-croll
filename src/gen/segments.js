@@ -47,3 +47,9 @@ export function buildSegment(plan,i,t){
  const enemy={x:cover.x+c.dx*1.6,y:0,z:cover.z+c.dz*1.6,peekX:c.dz*1.3,peekZ:-c.dx*1.3};
  return {i,id:t.id,template:t,entry,exit,slabs,links,jumps,cover,enemy,threat:t.threat};
 }
+export function steerBot(body,segment,layer,dt){
+ const target=segment.exit[layer],dx=target.x-body.x,dz=target.z-body.z,d=Math.hypot(dx,dz);
+ const stride=Math.min(d,config.sprint*dt);
+ const lip=segment.jumps.find(j=>j.layer===layer)?.a;
+ return {dx:d?dx/d*stride:0,dz:d?dz/d*stride:0,jump:!!lip&&Math.hypot(body.x-lip.x,body.z-lip.z)<.24,arrived:d<.02};
+}

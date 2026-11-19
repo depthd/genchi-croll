@@ -5,9 +5,9 @@ import {mix} from './segments.js';
 const kinds=['tile','brick','cement','steel','shutter','asphalt','crate','bin','stripe','check','poster','sign','graffiti'];
 let material;
 const tiles=new Map();
-function atlas(){
+export function atlas(){
  if(material)return material;
- const canvas=document.createElement('canvas');canvas.width=canvas.height=512;
+ const canvas=(typeof document==='undefined'?new OffscreenCanvas(512,512):document.createElement('canvas'));canvas.width=canvas.height=512;
  const ctx=canvas.getContext('2d');
  for(const kind of kinds)for(let v=0;v<3;v++){
    const i=tiles.size;tiles.set(kind+v,i);
@@ -30,6 +30,11 @@ function atlas(){
  };
  return material;
 }
+const faces=[
+ [[0,1,3,2],0,1,.72],[[5,4,6,7],0,1,.9],[[4,0,2,6],2,1,.74],
+ [[1,5,7,3],2,1,.9],[[2,3,7,6],0,2,1],[[4,5,1,0],0,2,.54]
+];
+const colorCache=new Map();
 function batch(group){
  const mat=atlas(),pos=[],uv=[],color=[],tile=[],idx=[],shade=new T.Color();
  function face(points,w,h,kind,tint,brightness=1){
@@ -40,9 +45,16 @@ function batch(group){
    idx.push(base,base+1,base+2,base,base+2,base+3);
  }
  function box(x,y,z,w,h,d,kind,tint='#f0e1d0',label=false){
-   const pts=Array.from({length:8},(_,i)=>({x:x+((i&1)?w:-w)/2,y:y+((i&2)?h:-h)/2,z:z+((i&4)?d:-d)/2}));
-   for(const [indices,fw,fh,light] of [[[0,1,3,2],w,h,.72],[[5,4,6,7],w,h,.9],[[4,0,2,6],d,h,.74],[[1,5,7,3],d,h,.9],[[2,3,7,6],w,d,1],[[4,5,1,0],w,d,.54]]){
-     face(indices.map(i=>pts[i]),label?.998:fw/4,label?.998:fh/4,kind,tint,light);
+   if(!colorCache.has(tint))colorCache.set(tint,new T.Color(tint));
+   const rgb=colorCache.get(tint),dims=[w,h,d],n=tiles.get(kind)??tiles.get('plain');
+   for(const [indices,horizontal,vertical,light] of faces){
+     const base=pos.length/3,uw=label?.998:dims[horizontal]/4,vh=label?.998:dims[vertical]/4;
+     for(let j=0;j<4;j++){
+       const i=indices[j];
+       pos.push(x+((i&1)?w:-w)/2,y+((i&2)?h:-h)/2,z+((i&4)?d:-d)/2);
+       color.push(rgb.r*light,rgb.g*light,rgb.b*light);tile.push(n);uv.push(j===1||j===2?uw:0,j>=2?vh:0);
+     }
+     idx.push(base,base+1,base+2,base,base+2,base+3);
    }
  }
  function finish(){
@@ -68,6 +80,7 @@ export function skin(plan){
     }
     mesh.visible=false;
   }
+  if(!group.children.length)throw Error('Пустой каркас '+s.i);
   const b=s.cover;
   box(b.x,.51,b.z,b.w,1.02,b.d,'bin'+v);box(b.x,1.05,b.z,1.07,.09,1.08,'stripe'+v);
   for(const side of [-1,1]){
@@ -115,9 +128,21 @@ export function skin(plan){
       const edge=q=>({x:q.x-c.dz*n,y:q.y,z:q.z+c.dx*n});
       const near=edge(a),far=edge(b);
       const base=q=>({...q,y:Math.min(-5.4,q.y-.18)});
-      if(layer!=='R'||!s.jumps.length)face([near,far,base(far),base(near)],8,2,(layer==='I'?'brick':'cement')+v,'#6e6558');
+      for(const [lo,hi] of [[.02,.10],[.44,.49],[.94,.98]]){
+        const l=mix(near,far,lo),r=mix(near,far,hi);
+        face([l,r,base(r),base(l)],1,2,(layer==='I'?'brick':'cement')+v,'#6e6558');
+      }
     }
   }
+  if(s.template.street==='market')for(let j=0;j<4;j++)
+    place(3.35+.55*(j%2),.32+Math.floor(j/2)*.57,16+j%2,.58,.58,.68,'crate'+j%3);
+  if(s.template.street==='barricade')place(-2.75,.6,16,.42,1.2,2.2,'stripe'+v);
+  if(s.template.room==='kitchen'){const p=mix(s.entry.I,s.exit.I,.66);
+    box(p.x-c.dz*1.37,p.y+.54,p.z+c.dx*1.37,.42,1.08,.65,'shutter'+v);}
+  if(s.template.roof==='skylight'){const p=mix(s.entry.R,s.exit.R,.6);
+    box(p.x+c.dz*1.9,p.y+.13,p.z-c.dx*1.9,.9,.26,1.7,'tile'+v);}
+  if(s.template.drain==='water'){const p=mix(s.entry.U,s.exit.U,.55);
+    box(p.x,p.y+.01,p.z,c.dx?4.6:2,.01,c.dx?2:4.6,'plain','#28484b');}
   for(let j=0;j<3;j++){
     const y=6.5+j*.29,t=11+j*2.35;
     place(0,y,t,19,.035,.045,'plain','#242738');
@@ -127,6 +152,18 @@ export function skin(plan){
     place(0,6.12,20.97,12,.05,.12,'plain','#aa346b');
     place(0,7.25,21.04,17,.13,.14,'steel'+v);
     for(let k=-8;k<=8;k+=2)place(k,6.9,21.04,.08,.9,.12,'steel'+v);
+  }
+  if(s.i===0){
+    place(0,-.04,2,5,.08,4,'check0');place(0,2.9,.3,5,.18,1.3,'tile2');
+    place(-2.35,1.2,1.8,.2,2.4,4,'tile1');
+    place(2.28,1.3,1.5,.2,2.6,3,'shutter1');
+    place(1.68,.82,2.2,.92,.18,2,'crate1');
+    for(const t of [1.5,2.9])place(1.8,.4,t,.12,.8,.12,'steel0');
+    place(1.65,1.15,2,.22,.4,.2,'steel2');
+    place(1.54,1.21,2.55,.12,.1,.38,'steel1');
+    place(-1.75,.5,1,.78,1,1.7,'steel0');place(-2.04,1.2,1,.12,1.4,1.62,'tile2');
+    place(-1.77,1.09,1,.32,.18,.8,'steel1');place(-1.77,1.13,1.6,.24,.24,.23,'cement0');
+    place(-1.8,2.27,1.6,.52,.08,.52,'plain','#7dff1a');
   }
   const r=mix(s.entry.R,s.exit.R,.32);
   box(r.x+c.dz*2,r.y+.6,r.z-c.dx*2,1.1,1.2,1.1,'steel'+v);
