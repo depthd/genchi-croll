@@ -26,3 +26,4 @@ strong { color: var(--amber); font-size: 34px; }
 .setting output { color: var(--amber); font-variant-numeric: tabular-nums; }
 .setting input { grid-column: 1 / -1; width: 100%; margin: 0; accent-color: var(--amber); }
 #debug {position:fixed;top:3rem;left:1rem;background:#131a3a;color:#b9ab8c;padding:.5rem;font:12px monospace} #debug label{display:block} #debug input{width:5em}
+#view {inset:50% auto auto 50%;transform:translate(-50%,-50%);width:min(100vw,177.7778vh);aspect-ratio:16/9} body{background:#0a0f24}

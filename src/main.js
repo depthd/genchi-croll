@@ -1,3 +1,4 @@
+import {pipeline} from './render.js';
 import {config, query} from './config.js';
 import * as THREE from 'three';
 import { block, buildCity, glow, randomGenerator, solid } from './city.js';
@@ -49,9 +50,10 @@ try {
 renderer.domElement.setAttribute('aria-label', 'Вид от первого лица');
 view.append(renderer.domElement);
 
+const pixels = pipeline(renderer,[240,270,360].includes(Number(query.get('res'))) ? Number(query.get('res')) : config.resolution);
 const scene = new THREE.Scene();
-scene.background = new THREE.Color('#1c223b');
-scene.fog = new THREE.FogExp2('#1c223b', .043);
+scene.background = new THREE.Color('#0a0f24');
+scene.fog = new THREE.FogExp2('#0a0f24', .034);
 scene.add(new THREE.HemisphereLight('#a7bdf5', '#766563', 2));
 const moon = new THREE.DirectionalLight('#8994dd', .65);
 moon.position.set(-5, 14, 8);
@@ -90,7 +92,7 @@ flash.visible = false;
 weapon.add(flash);
 
 const random = randomGenerator(740);
-const rainCount = 760;
+const rainCount = 820;
 const rainPoints = new Float32Array(rainCount * 6);
 for (let i = 0; i < rainPoints.length; i += 6) {
   rainPoints[i] = (random() - .5) * 16;
@@ -356,11 +358,8 @@ function update(dt) {
 }
 
 function resize() {
-  const { innerWidth, innerHeight } = window;
-  camera.aspect = innerWidth / innerHeight;
+  camera.aspect = 16 / 9;
   camera.updateProjectionMatrix();
-  const height = Math.min(420, innerHeight);
-  renderer.setSize(Math.ceil(height * camera.aspect), height, false);
 }
 
 function frame(now) {
@@ -388,7 +387,7 @@ function frame(now) {
     effect.line.geometry.dispose();
     effects.splice(i, 1);
   }
-  renderer.render(scene, camera);
+  pixels.render(scene, camera);
   if (stats.isConnected && now - (stats.last || 0) > 500) {
     stats.textContent = Math.round(1 / dt) + ' кадр/с · вызовы ' + renderer.info.render.calls + ' · треуг. ' + renderer.info.render.triangles + ' · враги ' + enemies.length;
     stats.last = now;
@@ -443,6 +442,7 @@ if (query.has('debug')) {
   document.body.append(panel);
 }
 window.GAME = {camera, enemies, config, get seconds(){return seconds}, get state(){return state}};
+scene.traverse(o => {if (o.material) for (const m of [].concat(o.material)) pixels.snap(m);});
 reset();
 resize();
 requestAnimationFrame(frame);

@@ -27,7 +27,7 @@ function canvasTexture(width, height, paint) {
   paint(canvas.getContext('2d'), width, height);
   const texture = new THREE.CanvasTexture(canvas);
   texture.magFilter = THREE.NearestFilter;
-  texture.minFilter = THREE.NearestMipmapLinearFilter;
+  texture.minFilter = THREE.NearestFilter;
   texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
 }
@@ -148,7 +148,7 @@ export function buildCity(scene) {
       block(scene, glow('#a698ff'), side * 6.3, 3.4, branch.z - 1.43, 1.65, .09, .13);
       const lamp = new THREE.PointLight('#8c87ff', 40, 13, 1.65);
       lamp.position.set(side * 6.5, 2.8, branch.z - 1);
-      scene.add(lamp);
+      
     }
     facade(side, near, -49.5);
   }
@@ -219,6 +219,20 @@ export function buildCity(scene) {
   sign(scene, 'ВЫХОД', '#ffb772', '#442423', 0, 3.28, -46.40, 0, 1.8);
   const exitLight = new THREE.PointLight('#ff8744', 45, 13, 1.7);
   exitLight.position.set(0, 2.5, -44.8);
-  scene.add(exitLight);
+  
+  const batches = new Map();
+  for (const mesh of [...scene.children]) {
+    if (mesh.geometry !== cube || Array.isArray(mesh.material)) continue;
+    if (!batches.has(mesh.material)) batches.set(mesh.material, []);
+    batches.get(mesh.material).push(mesh);
+  }
+  for (const [material, meshes] of batches) {
+    if (meshes.length < 2) continue;
+    const batch = new THREE.InstancedMesh(cube, material, meshes.length);
+    meshes.forEach((mesh,i) => {
+      mesh.updateMatrixWorld(); batch.setMatrixAt(i,mesh.matrixWorld); mesh.removeFromParent();
+    });
+    scene.add(batch);
+  }
   return { colliders, ambushes };
 }
