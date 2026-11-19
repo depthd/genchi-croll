@@ -66,9 +66,10 @@ const { colliders, ambushes } = buildCity(scene);
 scene.updateMatrixWorld(true);
 const walls = colliders.map((mesh) => new THREE.Box3().setFromObject(mesh));
 
+let feet=0, vertical=0, grace=0, jumpQueue=0, vx=0, vz=0, inserted=0, reloadPhase='';
 const darkSteel = solid('#41424c');
 const silver = solid('#8e8990');
-const charcoal = solid('#2c2935');
+const charcoal = solid('#6b3e22');
 const amber = glow('#ffac46');
 const optic = glow('#ff344a');
 const burst = glow('#ffbe65');
@@ -198,6 +199,7 @@ function menu(next, heading, copy, label) {
 
 function reset() {
   camera.position.set(0, 1.57, 3.1);
+  feet=vertical=jumpQueue=vx=vz=0; grace=config.jumpBuffer; reloadPhase='';
   yaw = 0;
   pitch = 0;
   seconds = 35;
@@ -246,17 +248,20 @@ function hasCover(origin, target) {
 }
 
 function shoot() {
-  if (state !== 'playing' || cooldown || reloadTime) return;
+  if (state !== 'playing' || cooldown || (reloadTime && !inserted)) return;
+  reloadTime=0; reloadPhase=''; inserted=0;
   if (!ammo) {
     sound('empty');
     cooldown = .2;
     return;
   }
   ammo--;
-  cooldown = .33;
+  cooldown = config.fireDelay;
   recoil = 1;
   sound('fire');
-  aimRay.setFromCamera(new THREE.Vector2(), camera);
+  const spread=THREE.MathUtils.degToRad(grace<=0?3:Math.hypot(vx,vz)>6.2?2.5:Math.hypot(vx,vz)>.1?1.2:.2);
+  aimRay.setFromCamera(new THREE.Vector2((random()-.5)*spread,(random()-.5)*spread), camera);
+  cylinder.rotation.y+=Math.PI/3;
   aimRay.far = 65;
   const targets = enemies.filter((enemy) => enemy.health > 0).flatMap(({ head, chest }) => [head, chest]);
   const hit = aimRay.intersectObjects([...colliders, ...targets], false)[0];
@@ -282,15 +287,33 @@ function move(dt) {
   pitch = THREE.MathUtils.clamp(pitch, -1.3, 1.3);
   const strafe = Number(keys.has('KeyD')) - Number(keys.has('KeyA'));
   const ahead = Number(keys.has('KeyW')) - Number(keys.has('KeyS'));
-  const stride = 6.6 * dt / Math.max(1, Math.hypot(strafe, ahead));
-  const dx = (Math.cos(yaw) * strafe - Math.sin(yaw) * ahead) * stride;
-  const dz = (-Math.sin(yaw) * strafe - Math.cos(yaw) * ahead) * stride;
-  const pos = camera.position;
-  const blocked = (x, z) => z > 5.4 || walls.some(({ min, max }) =>
-    x > min.x - .24 && x < max.x + .24 && z > min.z - .24 && z < max.z + .24);
-  if (!blocked(pos.x + dx, pos.z)) pos.x += dx;
-  if (!blocked(pos.x, pos.z + dz)) pos.z += dz;
-  pos.y = 1.57 + (ahead || strafe ? Math.sin(runTime * 14) * .035 : 0);
+  const sprint=keys.has('ShiftLeft')||keys.has('ShiftRight');
+  const stride=(sprint?config.sprint:config.walk)/Math.max(1,Math.hypot(strafe,ahead));
+  const blend=Math.min(1,dt*24*(grace>0?1:config.airControl));
+  vx+=((Math.cos(yaw)*strafe-Math.sin(yaw)*ahead)*stride-vx)*blend;
+  vz+=((-Math.sin(yaw)*strafe-Math.cos(yaw)*ahead)*stride-vz)*blend;
+  const pos=camera.position;
+  function support(x,z){
+    if(z>5.4)return Infinity;
+    let floor=0;
+    for(const {min,max} of walls) {
+      if(x<=min.x-.29||x>=max.x+.29||z<=min.z-.29||z>=max.z+.29||min.y>=feet+1.7)continue;
+      floor=Math.max(floor,max.y);
+    }
+    return floor;
+  }
+  const limit=feet+(grace>0?config.vault:config.step);
+  if(support(pos.x+vx*dt,pos.z)<=limit)pos.x+=vx*dt;
+  if(support(pos.x,pos.z+vz*dt)<=limit)pos.z+=vz*dt;
+  const floor=support(pos.x,pos.z);
+  if(jumpQueue>0&&grace>0){vertical=Math.sqrt(2*config.gravity*config.jump);grace=jumpQueue=0;}
+  vertical-=config.gravity*dt; feet+=vertical*dt;
+  if(feet<=floor&&vertical<=0){feet=floor;vertical=0;grace=config.jumpBuffer;}
+  else grace=Math.max(0,grace-dt);
+  jumpQueue=Math.max(0,jumpQueue-dt);
+  pos.y=feet+config.eye;
+  const fov=67+(sprint&&ahead?6:0);
+  if(Math.abs(camera.fov-fov)>.05){camera.fov+=(fov-camera.fov)*Math.min(1,dt*9);camera.updateProjectionMatrix();}
   camera.rotation.set(pitch + recoil * .023, yaw, 0, 'YXZ');
 }
 
@@ -340,8 +363,12 @@ function update(dt) {
     reloadTime -= dt;
     if (reloadTime <= 0) {
       reloadTime = 0;
-      ammo = 6;
-      sound('reload');
+      if(reloadPhase==='open'){reloadPhase='round';reloadTime=config.reloadRound;}
+      else if(reloadPhase==='round'){
+        ammo++; inserted++; sound('reload');
+        if(ammo===6){reloadPhase='close'; reloadTime=config.reloadClose;}
+        else reloadTime=config.reloadRound;
+      } else {reloadPhase='';inserted=0;}
     }
   }
   move(dt);
@@ -367,7 +394,7 @@ function frame(now) {
   lastFrame = now;
   if (state === 'playing') update(dt);
   else damage.style.opacity = '0';
-  const bob = state === 'playing' ? (camera.position.y - 1.57) * .36 : 0;
+  const bob = state === 'playing' ? Math.sin(runTime*12)*Math.min(.003,Math.hypot(vx,vz)*.0005) : 0;
   weapon.position.set(.205, -.199 + bob + recoil * .04 - (reloadTime ? .115 : 0), -.44 + recoil * .055);
   weapon.rotation.set(.06 + recoil * .24, -.065, reloadTime ? -.48 : -.04);
   flash.visible = recoil > .66;
@@ -406,11 +433,11 @@ document.addEventListener('keydown', (event) => {
   if (event.code.startsWith('Arrow') || event.code === 'Space') event.preventDefault();
   keys.add(event.code);
   if (event.code === 'KeyR' && ammo < 6 && reloadTime === 0) {
-    reloadTime = .83;
+    reloadTime=config.reloadOpen; reloadPhase='open'; inserted=0;
     sound('reload');
   }
   if (event.code === 'Escape' && !document.pointerLockElement) menu('paused', 'Пауза', 'Таймер остановлен.', 'Продолжить');
-  if (event.code === 'Space' && !event.repeat) shoot();
+  if (event.code === 'Space' && !event.repeat) jumpQueue=config.jumpBuffer;
 });
 document.addEventListener('keyup', (event) => keys.delete(event.code));
 document.addEventListener('mousemove', (event) => {
