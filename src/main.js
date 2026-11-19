@@ -1,3 +1,4 @@
+import {skin,skyline} from './gen/skin.js';
 import {sequence} from './gen/sequencer.js';
 import {advance} from './gen/physics.js';
 import {stream} from './gen/stream.js';
@@ -68,7 +69,8 @@ const camera = new THREE.PerspectiveCamera(67, 1, .035, 100);
 camera.rotation.order = 'YXZ';
 scene.add(camera);
 const plan=route(campaign.seed), segments=sequence(plan);
-const world=stream(scene,plan,segments);
+const world=stream(scene,plan,segments,query.get('gen')==='debug'?null:skin(plan));
+const positionTower=skyline(scene,plan);
 const colliders=world.colliders, ambushes=[];
 let distance=0;
 const body={x:0,y:0,z:0,vy:0,grace:0};
@@ -441,6 +443,7 @@ function frame(now) {
   const bob = state === 'playing' ? Math.sin(runTime*12)*Math.min(.003,Math.hypot(vx,vz)*.0005) : 0;
   weapon.position.set(.205, -.199 + bob + recoil * .04 - (reloadTime ? .115 : 0), -.44 + recoil * .055);
   weapon.rotation.set(.06 + recoil * .24, -.065, reloadTime ? -.48 : -.04);
+  rain.visible=body.y>=0;
   flash.visible = recoil > .66;
   for (let i = 0; i < rainPoints.length; i += 6) {
     rainPoints[i + 1] -= dt * (10 + (i % 11) * .4);
@@ -460,6 +463,7 @@ function frame(now) {
   }
   if(map.isConnected)drawMap(map,plan,camera.position,segments);
   rain.position.copy(camera.position);
+  positionTower(camera.position);
   pixels.render(scene, camera);
   if (stats.isConnected && now - (stats.last || 0) > 500) {
     stats.textContent = Math.round(1 / dt) + ' кадр/с · вызовы ' + renderer.info.render.calls + ' · треуг. ' + renderer.info.render.triangles + ' · враги ' + enemies.length;
@@ -517,7 +521,7 @@ if (query.has('debug')) {
   document.body.append(panel);
 }
 window.GAME = {camera, enemies, config,plan,segments,world,body,renderer,campaign, get seconds(){return seconds}, get state(){return state}};
-scene.traverse(o => {if (o.material) for (const m of [].concat(o.material)) pixels.snap(m);});
+scene.traverse(o => {if (o.material) for (const m of [].concat(o.material)) {if(!m.vertexColors)pixels.snap(m);}});
 reset();
 if(query.has('shot')){overlay.hidden=true;document.body.classList.add('photo');}
 resize();
