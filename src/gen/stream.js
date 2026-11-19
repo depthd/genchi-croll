@@ -44,7 +44,11 @@ export function stream(scene, plan, segments, decorate) {
     }
     const b = s.cover;
     hits.push(block(group, materials.G, b.x, b.y + b.h / 2, b.z, b.w, b.h, b.d));
-    for (const w of s.walls) hits.push(block(group, materials.G, w.x, w.y, w.z, w.w, w.h, w.d));
+    for (const w of s.walls) {
+      const mesh = block(group, materials.G, w.x, w.y, w.z, w.w, w.h, w.d);
+      mesh.rotation.y = Math.atan2(w.dx ?? 0, w.dz ?? 1);
+      hits.push(mesh);
+    }
     const moving = [];
     if (decorate) {
       decorate(group, s, hits);
@@ -62,16 +66,22 @@ export function stream(scene, plan, segments, decorate) {
         );
         moving.push({ mesh, p, slideX: -cell.dz * slide, slideZ: cell.dx * slide });
       }
-      if (s.entry.I.y === s.exit.I.y) {
-        const p = mix(s.entry.I, s.exit.I, 0.76);
-        for (const sign of [-1, 1])
-          panel(
-            { x: p.x - cell.dz * sign * 0.66, y: p.y + 1.16, z: p.z + cell.dx * sign * 0.66 },
-            1.32,
-            2.27,
-            0.09,
-            sign * 1.38,
+      for (const door of s.doors) {
+        for (const side of [-1, 1]) {
+          const p = { x: door.x + door.dx * side * 0.5, y: door.y, z: door.z + door.dz * side * 0.5 };
+          const mesh = block(
+            group,
+            surface('steel', s.i % 3),
+            p.x,
+            p.y,
+            p.z,
+            door.d,
+            door.h,
+            door.w / 2,
           );
+          mesh.rotation.y = Math.atan2(door.dx, door.dz);
+          moving.push({ mesh, p, slideX: door.dx * side * 1.1, slideZ: door.dz * side * 1.1 });
+        }
       }
       for (const d of s.devices)
         if (d.kind === 'hatch') panel({ x: d.x, y: 0.04, z: d.z }, 1.02, 0.07, 1.02, 1.09);

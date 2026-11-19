@@ -53,6 +53,9 @@ export function atmosphere(ctx, volume) {
     transfer() {
       pulse(740, 0.11, 1.4, 'sawtooth');
     },
+    hit() {
+      pulse(1250, 0.07, 0.045, 'triangle');
+    },
     shot() {
       pulse(88, 0.32, 0.26);
     },

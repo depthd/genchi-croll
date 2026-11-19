@@ -37,7 +37,7 @@ function port(plan, i, layer) {
     w: spec.width,
     x: x - spec.offset * (c.dz + (corner ? p.dz : 0)),
     z: z + spec.offset * (c.dx + (corner ? p.dx : 0)),
-    y: plan.relays.includes(i) || i === 0 || i === plan.cells.length ? 0 : spec.y,
+    y: spec.y,
   };
 }
 export function slab(a, b, w, layer, link = false) {
@@ -64,96 +64,89 @@ export function buildSegment(plan, i, t) {
     exit = {},
     slabs = [],
     jumps = [],
-    links = [];
+    links = [],
+    paths = {};
+  const c = plan.cells[i];
+  const at = (u, y, d) => ({ x: c.x - c.dz * u + c.dx * d, y, z: c.z + c.dx * u + c.dz * d });
   for (const layer of layers) {
     const a = (entry[layer] = port(plan, i, layer)),
       b = (exit[layer] = port(plan, i + 1, layer));
-    const gap =
-      layer === 'R' && a.y === b.y && t.roof.startsWith('gap')
-        ? t.roof === 'gap25'
-          ? 2.5
-          : config.gap
-        : 0;
-    if (!gap) slabs.push(slab(a, b, a.w, layer));
-    else {
-      const d = gap / Math.hypot(b.x - a.x, b.z - a.z) / 2,
-        l = mix(a, b, 0.5 - d),
-        r = mix(a, b, 0.5 + d);
-      slabs.push(slab(a, l, a.w, layer), slab(r, b, a.w, layer));
-      jumps.push({ a: l, b: r, layer });
+    let points = [a, b];
+    if (layer === 'I')
+      points = [
+        a,
+        at(8.8, 0.04, 8),
+        at(t.room === 'kitchen' ? 10.2 : 7.5, 0.04, 17),
+        at(8.8, 0.04, 25),
+        b,
+      ];
+    paths[layer] = points;
+    if (layer === 'R') {
+      const left = at(-9.5, 9.6, 14.6),
+        right = at(-9.5, 9.6, 17.4);
+      const jump = t.roof.startsWith('gap') && i % 4 === 2;
+      slabs.push(slab(a, left, a.w, layer), slab(right, b, a.w, layer));
+      if (jump) jumps.push({ a: left, b: right, layer });
+      else {
+        const bridge = slab(left, right, 1.6, layer);
+        bridge.bridge = true;
+        slabs.push(bridge);
+      }
+      paths.R = [a, left, right, b];
+    } else
+      for (let n = 1; n < points.length; n++) slabs.push(slab(points[n - 1], points[n], a.w, layer));
+  }
+  // The street is continuous ground. The other paths belong to buildings and tunnels.
+  slabs[0].w = 36;
+  Object.assign(slabs[0], slab(entry.G, exit.G, 36, 'G'));
+  function connect(from, to, points, kind = 'stair') {
+    const pieces = [];
+    for (let n = 1; n < points.length; n++) {
+      const p = slab(points[n - 1], points[n], 1.6, to, true);
+      p.from = from;
+      p.to = to;
+      p.kind = kind;
+      pieces.push(p);
+      slabs.push(p);
     }
+    links.push({ from, to, kind, points, pieces, a: points[0], b: points.at(-1) });
   }
-  const junction = plan.relays.includes(i) || i === 0,
-    finish = i === plan.cells.length - 1;
-  for (const [from, to] of [
-    ['G', 'R'],
-    ['G', 'I'],
-    ['I', 'U'],
-  ]) {
-    if (!junction && !finish && to !== ['R', 'U', 'I'][i % 3]) continue;
-    const flat = entry[from].y === exit[from].y && entry[to].y === exit[to].y;
-    if (!flat && !junction && !finish) continue;
-    const a = mix(entry[from], exit[from], junction ? 0 : finish ? 1 : 0.12);
-    const b = mix(entry[to], exit[to], junction ? 0 : finish ? 1 : 0.88);
-    const path = slab(a, b, 1.6, to, true);
-    path.from = from;
-    path.to = to;
-    links.push(path);
-    slabs.push(path);
+  // Switchback fire escape fixed to the front of a real roof-bearing building.
+  if (i % 2 === 0 || plan.relays.includes(i) || i === plan.cells.length - 1) {
+    connect('G', 'R', [
+      at(-3.5, 0, 4),
+      at(-3.5, 3.2, 11),
+      at(-5.3, 3.2, 11),
+      at(-5.3, 6.4, 4),
+      at(-7.1, 6.4, 4),
+      at(-7.1, 9.6, 11),
+      at(-9.5, 9.6, 11),
+    ]);
   }
-  // A street widens between the fixed five-metre ports. Narrow alleys retain the authored width.
-  if (t.street !== 'alley') {
-    const a = mix(entry.G, exit.G, 0.08),
-      b = mix(entry.G, exit.G, 0.92),
-      c = plan.cells[i];
-    for (const point of [a, b]) {
-      point.x += c.dz * 5;
-      point.z -= c.dx * 5;
-    }
-    const pavement = slab(a, b, 5, 'G');
-    pavement.pavement = true;
-    slabs.push(pavement);
+  for (const p of slabs.filter((p) => p.layer === 'R' && !p.link)) {
+    if (links.some((l) => l.to === 'R'))
+      p.holes = [{ a: at(-7.1, 0, 3.2), b: at(-7.1, 0, 11.9), radius: 1.03 }];
   }
-  const devices = [];
-  if (!junction && !finish && layers.every((k) => entry[k].y === exit[k].y) && i % 3 === 1) {
-    const layer = i % 2 ? 'U' : 'R',
-      cell = plan.cells[i];
-    const inner = mix(entry.G, exit.G, 0.57),
-      outer = mix(entry[layer], exit[layer], 0.57);
-    const side = layer === 'R' ? -1 : 1;
-    outer.x -= cell.dz * side * 0.9;
-    outer.z += cell.dx * side * 0.9;
-    const dock = { ...outer, y: 0 };
-    slabs.push(slab(inner, dock, 1.6, 'G', true));
-    slabs.at(-1).from = 'G';
-    slabs.at(-1).to = layer;
-    devices.push({
-      kind: layer === 'R' ? 'ladder' : 'hatch',
-      layer,
-      x: dock.x,
-      z: dock.z,
-      low: Math.min(0, outer.y),
-      high: Math.max(0, outer.y),
-    });
+  connect('G', 'I', [at(2.6, 0.04, 6), at(8.8, 0.04, 6)], 'door');
+  connect('G', 'I', [at(8.8, 0.04, 26), at(2.6, 0.04, 26)], 'door');
+  const hatch = at(3, 0, 19);
+  hatch.x = Math.floor(hatch.x / 2) * 2 + 1;
+  hatch.z = Math.floor(hatch.z / 2) * 2 + 1;
+  const devices =
+    i % 3 === 1 || i === plan.cells.length - 1
+      ? [{ kind: 'hatch', layer: 'U', x: hatch.x, z: hatch.z, low: -4.5, high: 0 }]
+      : [];
+  if (devices.length) {
+    connect('U', 'U', [{ ...hatch, y: -4.5 }, at(0, -4.5, 19)], 'tunnel');
   }
-  if (junction || finish) {
-    const a = entry.G,
-      b = exit.G,
-      lo = finish ? 0.94 : 0,
-      hi = finish ? 1 : 0.06;
-    const p = slab(mix(a, b, lo), mix(a, b, hi), 26, 'G');
-    p.plaza = true;
-    slabs.push(p);
-  }
-  const c = plan.cells[i],
-    g = mix(entry.G, exit.G, 0.64);
-  const cover = { x: g.x - c.dz * 1.95, y: 0, z: g.z + c.dx * 1.95, w: 1, h: 1.05, d: 1 };
+  const g = at(2.1, 0, 22);
+  const cover = { x: g.x, y: 0, z: g.z, w: 1.15, h: 1.15, d: 1.45 };
   const enemy = {
-    x: cover.x + c.dx * 1.6,
+    x: g.x + c.dx * 1.9,
     y: 0,
-    z: cover.z + c.dz * 1.6,
-    peekX: c.dz * 1.3,
-    peekZ: -c.dx * 1.3,
+    z: g.z + c.dz * 1.9,
+    peekX: c.dz * 1.7,
+    peekZ: -c.dx * 1.7,
   };
   return {
     i,
@@ -164,6 +157,7 @@ export function buildSegment(plan, i, t) {
     exit,
     slabs,
     links,
+    paths,
     jumps,
     cover,
     enemy,
@@ -171,16 +165,23 @@ export function buildSegment(plan, i, t) {
   };
 }
 export function steerBot(body, segment, layer, dt) {
-  const target = segment.exit[layer],
-    dx = target.x - body.x,
+  const points = segment.paths[layer];
+  if (body.botSegment !== segment.i) {
+    body.botSegment = segment.i;
+    body.waypoint = 1;
+  }
+  let target = points[body.waypoint];
+  if (Math.hypot(target.x - body.x, target.z - body.z) < 0.04 && body.waypoint < points.length - 1)
+    target = points[++body.waypoint];
+  const dx = target.x - body.x,
     dz = target.z - body.z,
-    d = Math.hypot(dx, dz);
-  const stride = Math.min(d, config.sprint * dt);
+    d = Math.hypot(dx, dz),
+    stride = Math.min(d, config.sprint * dt);
   const lip = segment.jumps.find((j) => j.layer === layer)?.a;
   return {
     dx: d ? (dx / d) * stride : 0,
     dz: d ? (dz / d) * stride : 0,
     jump: !!lip && Math.hypot(body.x - lip.x, body.z - lip.z) < 0.24,
-    arrived: d < 0.02,
+    arrived: d < 0.02 && body.waypoint === points.length - 1,
   };
 }

@@ -1,3 +1,4 @@
+import { patrol, animateCasualty } from './patrol.js';
 import { clockface } from './clockface.js';
 import { atmosphere } from './audio.js';
 import { specialistKind, specialist, updateSpecial } from './specialists.js';
@@ -98,14 +99,22 @@ const darkSteel = solid('#1d2447');
 const silver = solid('#8e8990');
 const charcoal = solid('#6b3e22');
 const amber = glow('#ffac46');
-const optic = glow('#3a63ff');
 const burst = glow('#ffbe65');
 const weapon = new THREE.Group();
 camera.add(weapon);
+weapon.scale.setScalar(0.88);
 block(weapon, charcoal, 0.035, -0.062, 0.009, 0.09, 0.15, 0.1).rotation.x = -0.32;
 block(weapon, darkSteel, 0, 0, -0.1, 0.102, 0.08, 0.276);
 block(weapon, charcoal, 0.012, -0.053, 0.005, 0.087, 0.14, 0.085).rotation.x = -0.28;
-block(weapon, silver, 0, 0.063, -0.195, 0.085, 0.067, 0.27);
+block(weapon, silver, 0, 0.063, -0.195, 0.058, 0.042, 0.27);
+const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.032, 0.34, 8), silver);
+barrel.rotation.x = Math.PI / 2;
+barrel.position.set(0, 0.06, -0.26);
+weapon.add(barrel);
+const bore = new THREE.Mesh(new THREE.CircleGeometry(0.022, 8), darkSteel);
+bore.rotation.y = Math.PI;
+bore.position.set(0, 0.06, -0.431);
+weapon.add(bore);
 block(weapon, darkSteel, 0, 0.088, -0.33, 0.076, 0.046, 0.055);
 block(weapon, amber, 0, 0.114, -0.336, 0.024, 0.012, 0.018);
 block(weapon, charcoal, 0, 0.061, -0.336, 0.04, 0.034, 0.014);
@@ -162,54 +171,22 @@ scene.add(rain);
 
 const enemies = [],
   defeated = new Set();
-function createEnemy({ kind, x, z, peekX, peekZ }, segment) {
-  const standing = kind === 'corner';
-  const group = new THREE.Group();
-  scene.add(group);
-  const head = block(group, silver, 0, 0.27, 0, 0.31, 0.29, 0.28);
-  const chest = block(group, darkSteel, 0, -0.055, -0.02, 0.52, 0.32, 0.34);
-  block(group, optic, 0, 0.3, 0.147, 0.23, 0.047, 0.024);
-  block(group, charcoal, 0, 0.025, 0.164, 0.19, 0.13, 0.07);
-  for (const side of [-1, 1]) {
-    block(group, silver, side * 0.3, -0.035, 0.015, 0.15, 0.21, 0.2);
-    block(group, darkSteel, side * 0.31, -0.15, 0.12, 0.125, 0.12, 0.31);
-    if (standing) {
-      block(group, darkSteel, side * 0.15, -0.49, 0.025, 0.14, 0.58, 0.19);
-      block(group, silver, side * 0.15, -0.96, 0.025, 0.13, 0.41, 0.16);
-    } else {
-      block(group, darkSteel, side * 0.15, -0.33, 0.025, 0.14, 0.28, 0.19);
-    }
-    block(group, charcoal, side * 0.15, standing ? -1.19 : -0.44, 0.13, 0.15, 0.12, 0.32);
-  }
-  block(group, charcoal, -0.3, -0.125, 0.32, 0.11, 0.1, 0.2);
-  const muzzle = block(group, burst, -0.3, -0.12, 0.48, 0.19, 0.14, 0.19);
-  muzzle.visible = false;
-  const stripe = block(group, amber, 0.24, 0.045, 0.13, 0.12, 0.035, 0.05);
-  group.position.set(x, standing ? 1.25 : 0.46, z);
-  group.updateMatrixWorld(true);
-  return {
-    x,
-    z,
-    peekX,
-    peekZ,
-    standing,
-    group,
-    head,
-    chest,
-    muzzle,
-    stripe,
-    rifle: standing,
-    segment,
-    health: standing ? 3 : 2,
-    alert: null,
-    cycle: -1,
-  };
+function createEnemy(slot, segment) {
+  return patrol(scene, slot, segment, slot.kind === 'corner');
+}
+function removeEnemy(enemy) {
+  enemy.group.removeFromParent();
+  enemy.badge?.map.dispose();
+  for (const material of enemy.resources ?? []) material.dispose();
+  enemy.group.traverse((o) => {
+    if (o.isInstancedMesh) o.dispose();
+  });
 }
 function syncEnemies() {
   for (let i = enemies.length - 1; i >= 0; i--) {
     const e = enemies[i];
     if (world.active.has(e.segment)) continue;
-    e.group.removeFromParent();
+    removeEnemy(e);
     enemies.splice(i, 1);
   }
   for (const index of world.active.keys()) {
@@ -236,6 +213,7 @@ const direction = new THREE.Vector3();
 const effects = [];
 const flashMaterial = new THREE.LineBasicMaterial({ color: '#ffcf82' });
 const hostileMaterial = new THREE.LineBasicMaterial({ color: '#ff5a4e' });
+const impactMaterial = new THREE.LineBasicMaterial({ color: '#4fe7ff' });
 let audio,
   mixBus,
   armed = true,
@@ -352,12 +330,16 @@ function reset() {
   const layer =
     query.get('layer') ||
     (at === 'upper' ? 'R' : at === 'shortcut' || query.get('shot') === '2' ? 'I' : 'G');
-  const port = segments[i].entry[layer] || segments[i].entry.G,
+  const firstWake =
+    i === 0 && campaign.attempts === 0 && !query.has('shot') && !query.has('bots') && !query.has('at');
+  const port = segments[i].entry[firstWake ? 'I' : layer] || segments[i].entry.G,
     c = plan.cells[i];
   botIndex = i;
   botLayer = layer in config.layers ? layer : 'G';
   world.sync(i);
   Object.assign(body, {
+    botSegment: null,
+    waypoint: 1,
     ride: null,
     lastDevice: null,
     x: port.x + c.dx * 0.3,
@@ -386,8 +368,8 @@ function reset() {
   armed = campaign.attempts > 0 || i > 0 || query.has('shot') || query.has('bots');
   weapon.visible = armed;
   if (query.get('shot') === '4') {
-    camera.position.set(0.02, 1.42, 0.22);
-    camera.lookAt(-0.3, 1.19, -2.55);
+    camera.position.set(7.5, 1.58, -1.7);
+    camera.lookAt(12.3, 1.25, -6);
     weapon.visible = false;
   }
   if (query.get('shot') === '6') {
@@ -396,20 +378,22 @@ function reset() {
   }
   if (query.has('shot') && query.get('shot') !== '5') weapon.visible = false;
   delta.textContent = '';
+  combatReadout.textContent = '';
   runTime = 0;
   nextStep = nextTick = 0;
   ammo = 6;
   cooldown = recoil = reloadTime = hurt = hitMark = 0;
-  for (const e of enemies.splice(0)) e.group.removeFromParent();
+  for (const e of enemies.splice(0)) removeEnemy(e);
   defeated.clear();
   syncEnemies();
   if (query.get('shot') === '5') {
     const target = enemies.find((e) => e.segment === i);
     if (target) {
-      target.group.position.set(target.x + target.peekX, 1.15, target.z + target.peekZ);
+      target.group.position.set(target.x + target.peekX, 0, target.z + target.peekZ);
+      target.group.rotation.y = Math.atan2(camera.position.x - target.x, camera.position.z - target.z);
       camera.position.lerp(target.group.position, 0.78);
       camera.position.y = 1.55;
-      camera.lookAt(target.group.position);
+      camera.lookAt(target.group.position.clone().add(new THREE.Vector3(0, 1.25, 0)));
     }
   }
   for (const b of bullets.splice(0)) b.mesh.removeFromParent();
@@ -452,6 +436,18 @@ function hasCover(origin, target) {
   return ray.intersectObjects(colliders, false).length > 0;
 }
 
+const combatReadout = document.createElement('output');
+combatReadout.id = 'combat-readout';
+document.body.append(combatReadout);
+let feedbackUntil = 0;
+function combatFeedback(text, color = '#b9ab8c') {
+  combatReadout.textContent = text;
+  combatReadout.style.color = color;
+  feedbackUntil = runTime + 1.15;
+}
+const shotLight = new THREE.PointLight('#ffb66b', 0, 8, 2);
+camera.add(shotLight);
+shotLight.position.set(0.2, -0.1, -0.8);
 function shoot() {
   if (state !== 'playing' || cooldown || (reloadTime && !inserted)) return;
   reloadTime = 0;
@@ -468,6 +464,7 @@ function shoot() {
   cooldown = config.fireDelay;
   recoil = 1;
   sound('fire');
+  shotLight.intensity = 12;
   for (const guard of enemies)
     if (
       !guard.kind &&
@@ -481,6 +478,7 @@ function shoot() {
   aimRay.setFromCamera(new THREE.Vector2((random() - 0.5) * spread, (random() - 0.5) * spread), camera);
   cylinder.rotation.y += Math.PI / 3;
   aimRay.far = 65;
+  scene.updateMatrixWorld(true);
   const targets = enemies
     .filter((enemy) => enemy.health > 0)
     .flatMap(({ head, chest, shield }) => (shield ? [head, chest, shield] : [head, chest]));
@@ -488,8 +486,18 @@ function shoot() {
   const end = hit?.point ?? aimRay.ray.at(50, new THREE.Vector3());
   flash.getWorldPosition(from);
   trail(from, end, flashMaterial, 0.055);
-  if (!hit) return;
-  const enemy = enemies.find(({ head, chest }) => hit.object === head || hit.object === chest);
+  if (!hit) {
+    combatFeedback('МИМО', '#6e7a8b');
+    return;
+  }
+  const enemy = enemies.find(
+    ({ head, chest, shield }) => hit.object === head || hit.object === chest || hit.object === shield,
+  );
+  if (enemy && hit.object === enemy.shield) {
+    combatFeedback('ЩИТ · ОБОЙДИ СБОКУ', '#ff9a3c');
+    sparks(end, flashMaterial);
+    return;
+  }
   if (enemy) {
     if (enemy.shield) {
       const angle = Math.atan2(
@@ -497,23 +505,38 @@ function shoot() {
         camera.position.z - enemy.group.position.z,
       );
       if (Math.cos(angle - enemy.group.rotation.y) > 0.55) {
+        combatFeedback('БРОНЯ · ОБОЙДИ СБОКУ', '#ff9a3c');
         sparks(end, flashMaterial);
         return;
       }
     }
     enemy.health -= hit.object === enemy.head ? (enemy.kind === 'runner' ? 2 : 3) : 1;
-    enemy.group.visible = enemy.health > 0;
+    enemy.hitUntil = runTime + 0.13;
+    enemy.alert ??= runTime;
+    mixBus?.hit?.();
+    combatFeedback(
+      hit.object === enemy.head
+        ? 'В ГОЛОВУ'
+        : 'ПОПАДАНИЕ · ' + Math.max(0, enemy.health) + '/' + (enemy.maxHealth ?? 3),
+      enemy.health <= 0 ? '#7dff1a' : '#4fe7ff',
+    );
     if (enemy.health <= 0) {
+      enemy.deadAt = runTime;
       defeated.add(enemy.segment);
       dispatch.say('kill', runTime);
       const bonus = hit.object === enemy.head ? config.headBonus : config.killBonus;
       seconds = Math.min(config.cap, seconds + bonus);
-      delta.textContent = '+' + bonus.toFixed(1);
+      delta.textContent = '+' + bonus.toFixed(1) + ' с';
+      combatFeedback(
+        (hit.object === enemy.head ? 'В ГОЛОВУ' : 'ЦЕЛЬ ОТКЛЮЧЕНА') + ' · +' + bonus.toFixed(1) + ' с',
+        '#7dff1a',
+      );
     }
     hitMark = 0.16;
     enemy.alert ??= runTime;
   }
-  sparks(end, enemy ? hostileMaterial : flashMaterial);
+  if (!enemy) combatFeedback('УКРЫТИЕ', '#8b96a3');
+  sparks(end, enemy ? impactMaterial : flashMaterial);
 }
 
 function move(dt) {
@@ -578,6 +601,7 @@ function takeDamage(amount) {
   if (query.get('god') !== '1') seconds -= amount;
   delta.textContent = '−' + amount.toFixed(1);
   hurt = 0.8;
+  combatFeedback('ПОПАДАНИЕ ПО КОРПУСУ · −' + amount.toFixed(1) + ' с', '#ff9a3c');
 }
 function projectiles(dt) {
   for (let i = bullets.length - 1; i >= 0; i--) {
@@ -605,7 +629,10 @@ function projectiles(dt) {
 }
 function updateEnemies(dt) {
   for (const enemy of enemies) {
-    if (enemy.health <= 0) continue;
+    if (enemy.health <= 0) {
+      if (enemy.deadAt !== null) animateCasualty(enemy, runTime);
+      continue;
+    }
     if (enemy.kind) {
       updateSpecial(
         enemy,
@@ -631,7 +658,7 @@ function updateEnemies(dt) {
       camera.position.distanceTo(group.position) < 19
     ) {
       enemy.nextSight = runTime + config.sightInterval;
-      to.set(enemy.x + enemy.peekX, 1.65, enemy.z + enemy.peekZ);
+      to.set(enemy.x + enemy.peekX, 1.6, enemy.z + enemy.peekZ);
       if (!hasCover(camera.position, to)) enemy.alert = runTime;
     }
     const age = enemy.alert === null ? -1 : runTime - enemy.alert;
@@ -646,20 +673,25 @@ function updateEnemies(dt) {
     group.position.x = THREE.MathUtils.lerp(group.position.x, enemy.x + exposure * enemy.peekX, blend);
     group.position.z = THREE.MathUtils.lerp(group.position.z, enemy.z + exposure * enemy.peekZ, blend);
     if (!standing) {
-      group.position.y = THREE.MathUtils.lerp(group.position.y, 0.46 + exposure * 0.91, blend);
+      group.position.y = THREE.MathUtils.lerp(group.position.y, -0.44 + exposure * 0.44, blend);
     }
+    if (enemy.armor) {
+      enemy.armor.color
+        .set(enemy.hitUntil > runTime ? '#4fe7ff' : '#b9ab8c')
+        .multiplyScalar(enemy.hitUntil > runTime ? 2.5 : 2);
+    }
+    enemy.visor.scale.setScalar(phase > 0.88 && phase < 1.33 ? 1.55 : 1);
     enemy.muzzle.visible = false;
     const shot = Math.min(enemy.rifle ? 2 : 0, Math.floor((phase - 1.33) / 0.14));
     if (age >= 0 && phase > 0.91 && phase < 1.33) {
-      enemy.muzzle.visible = true;
+      enemy.visor.material.color.set('#9bdfff');
       if (enemy.warned !== cycle) {
         sound('empty');
         enemy.warned = cycle;
       }
     }
     if (phase < 1.33 || phase > 1.94 || enemy.cycle === cycle * 3 + shot) continue;
-    from.copy(group.position);
-    from.y += 0.04;
+    enemy.muzzle.getWorldPosition(from);
     to.copy(camera.position);
     if (hasCover(from, to)) continue;
     enemy.cycle = cycle * 3 + shot;
@@ -728,7 +760,11 @@ function update(dt) {
   ammoReadout.textContent = '●'.repeat(ammo) + '○'.repeat(6 - ammo);
   ammoReadout.setAttribute('aria-label', reloadTime ? 'Перезарядка' : `Патроны: ${ammo} из 6`);
   damage.style.opacity = String(hurt);
-  document.querySelector('#crosshair').textContent = hitMark > 0 ? '×' : '+';
+  const crosshair = document.querySelector('#crosshair');
+  crosshair.textContent = hitMark > 0 ? '×' : '+';
+  crosshair.style.color = hitMark > 0 ? '#4fe7ff' : '#b9ab8c';
+  crosshair.style.fontSize = 16 + recoil * 10 + 'px';
+  if (runTime > feedbackUntil) combatReadout.textContent = '';
   if (seconds <= 0) {
     dispatch.say('death', runTime);
     mixBus?.transfer();
@@ -739,7 +775,7 @@ function update(dt) {
     title.textContent = 'Тело №' + campaign.attempts + ' деактивировано';
     message.textContent =
       'Сознание переносится… Ближе всех подобрался: ' + Math.round(100 * campaign.record) + '%';
-  } else if (distance > segments.length - 0.035 && Math.abs(body.y) < 0.8) {
+  } else if (distance > segments.length - 0.035) {
     dispatch.say('end', runTime);
     campaign.best = campaign.best === null ? runTime : Math.min(runTime, campaign.best);
     save();
@@ -791,8 +827,12 @@ function frame(now) {
     -0.44 + recoil * 0.055,
   );
   weapon.rotation.set(0.06 + recoil * 0.24, 0.16, reloadTime ? -0.48 : -0.04);
-  rain.visible = body.y >= 0;
+  cylinder.position.x = reloadTime ? -0.095 : 0;
+  const cell = plan.cells[world.index];
+  const side = (camera.position.x - cell.x) * -cell.dz + (camera.position.z - cell.z) * cell.dx;
+  rain.visible = camera.position.y >= 0 && !(side > 4.5 && side < 14.5 && camera.position.y < 4.8);
   flash.visible = recoil > 0.66;
+  shotLight.intensity = recoil > 0.66 ? 12 : 0;
   for (let i = 0; i < rainPoints.length; i += 6) {
     rainPoints[i + 1] -= dt * (10 + (i % 11) * 0.4);
     if (rainPoints[i + 1] < -0.25) rainPoints[i + 1] += 14;

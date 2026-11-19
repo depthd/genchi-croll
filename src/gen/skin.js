@@ -70,13 +70,15 @@ export function atlas() {
         '#include <map_fragment>',
         `
      vec2 cell=vec2(mod(vTile,8.),7.-floor(vTile/8.));
-     diffuseColor*=texture2D(map,(cell+(fract(vMapUv)*63.+.5)/64.)/8.);
+     vec2 coords=vMapUv;
+     if((vTile>=15.&&vTile<18.)||(vTile>=27.&&vTile<30.))coords=streetPosition.xz*.25;
+     diffuseColor*=texture2D(map,(cell+(fract(coords)*63.+.5)/64.)/8.);
      if(vTile>=15.&&vTile<18.){
-       float along=vMapUv.y*4.;float across=vMapUv.x*4.;
-       float ripple=.52+.32*sin(along*31.+sin(across*21.)+weatherTime*2.);
+       float along=streetPosition.z;float across=streetPosition.x;
+       float ripple=.8+.2*sin(along*.8+weatherTime*.4);
        float sheen=exp(-abs(across-1.)*3.)*exp(-abs(mod(along+1.,14.)-7.)*.44);
-       diffuseColor.rgb+=vec3(.19,.062,.019)*sheen*ripple;
-       diffuseColor.rgb+=vec3(.018,.024,.049)*(.5+.5*sin(along*2.+sin(across*5.)));
+       diffuseColor.rgb+=vec3(.065,.027,.014)*sheen*ripple;
+       diffuseColor.rgb+=vec3(.006,.009,.014)*(.5+.5*sin(along*2.+sin(across*5.)));
      }
    `,
       );
@@ -157,269 +159,248 @@ export function skin(plan) {
   };
 }
 export function describeSkin(plan, s, { face, box }) {
-  const rnd = rng(plan.seed ^ Math.imul(s.i + 3, 0x45d9f3b)),
-    c = plan.cells[s.i],
-    v = s.i % 3;
-
-  const place = (u, y, t, w, h, d, k, tint, label = false) =>
-    box(
-      c.x - c.dz * u + c.dx * t,
-      y,
-      c.z + c.dx * u + c.dz * t,
-      c.dx ? d : w,
-      h,
-      c.dx ? w : d,
-      k,
-      tint,
-      label,
-    );
-  for (const p of s.slabs) {
-    const ox = (-p.dz * p.w) / 2,
-      oz = (p.dx * p.w) / 2;
+  const c = plan.cells[s.i],
+    v = s.i % 3,
+    rnd = rng(plan.seed ^ Math.imul(s.i + 3, 0x45d9f3b));
+  const at = (u, y, t) => ({ x: c.x - c.dz * u + c.dx * t, y, z: c.z + c.dx * u + c.dz * t });
+  const place = (u, y, t, w, h, d, k, tint, label = false) => {
+    const p = at(u, y, t);
+    box(p.x, p.y, p.z, c.dx ? d : w, h, c.dx ? w : d, k, tint, label);
+  };
+  function floor(p, kind) {
+    const x = (-p.dz * p.w) / 2,
+      z = (p.dx * p.w) / 2;
     face(
       [
         [p.a, 1],
         [p.a, -1],
         [p.b, -1],
         [p.b, 1],
-      ].map(([q, n]) => ({ x: q.x + n * ox, y: q.y, z: q.z + n * oz })),
+      ].map(([q, n]) => ({ x: q.x + n * x, y: q.y, z: q.z + n * z })),
       p.w / 4,
       p.length / 4,
-      (p.pavement
-        ? 'cement'
-        : p.link
-          ? 'steel'
-          : { G: 'asphalt', R: 'cement', I: 'tile', U: 'steel' }[p.layer]) + v,
-      '#c5bcaf',
+      kind,
+      '#b1aaa0',
     );
-    if (p.link)
-      for (let j = 1; j < p.length; j += 1.25) {
-        const q = mix(p.a, p.b, j / p.length);
-        box(q.x + ox, q.y + 0.06, q.z + oz, 0.1, 0.12, 0.19, 'plain', '#4fe7ff');
-      }
   }
-  for (const d of s.devices) {
-    for (const side of [-1, 1])
-      box(
-        d.x + side * 0.56,
-        (d.low + d.high) / 2,
-        d.z - 0.55,
-        0.075,
-        d.high - d.low,
-        0.075,
-        'plain',
-        '#4fe7ff',
-      );
-    for (let y = d.low + 0.32; y < d.high; y += 0.36)
-      box(d.x, y, d.z - 0.55, 1.14, 0.06, 0.08, 'steel' + v);
-    for (const side of [-1, 1])
-      box(d.x + side * 0.55, d.high + 0.025, d.z, 0.08, 0.05, 1.15, 'plain', '#4fe7ff');
+  // Tiles are owned once across the whole route, so a corner never renders two ground faces.
+  for (const tile of s.ground) {
+    const kind = tile.dist < 3.7 ? 'asphalt' : 'cement';
+    face(
+      [
+        { x: tile.x - 1, y: 0, z: tile.z - 1 },
+        { x: tile.x + 1, y: 0, z: tile.z - 1 },
+        { x: tile.x + 1, y: 0, z: tile.z + 1 },
+        { x: tile.x - 1, y: 0, z: tile.z + 1 },
+      ],
+      0.5,
+      0.5,
+      kind + v,
+      kind === 'asphalt' ? '#8d99a2' : '#777c85',
+    );
+  }
+  for (const w of s.architecture)
+    box(w.x, w.y, w.z, w.dx ? w.d : w.w, w.h, w.dx ? w.w : w.d, w.kind, '#aaa69e');
+  // The service floor follows rooms; its partitions, ceiling and facade belong to the same building.
+  for (const p of s.slabs) if (!p.link && (p.layer === 'U' || p.bridge)) floor(p, 'steel' + v);
+  for (const t of s.roomFloor) {
+    face(
+      [
+        { x: t.x - 0.5, y: 0.04, z: t.z - 0.5 },
+        { x: t.x + 0.5, y: 0.04, z: t.z - 0.5 },
+        { x: t.x + 0.5, y: 0.04, z: t.z + 0.5 },
+        { x: t.x - 0.5, y: 0.04, z: t.z + 0.5 },
+      ],
+      0.25,
+      0.25,
+      (s.template.room === 'kitchen' ? 'tile' : 'check') + v,
+      '#777c78',
+    );
+  }
+  for (const link of s.links) {
+    if (link.kind !== 'stair') continue;
+    for (const p of link.pieces) {
+      const rise = p.b.y - p.a.y;
+      if (Math.abs(rise) < 0.1) {
+        floor(p, 'steel' + v);
+        continue;
+      }
+      const count = Math.ceil(Math.abs(rise) / 0.18),
+        step = p.length / count;
+      for (let j = 0; j < count; j++) {
+        const q = mix(p.a, p.b, (j + 0.5) / count),
+          y = p.a.y + (rise * (j + 1)) / count;
+        box(
+          q.x,
+          y - 0.14,
+          q.z,
+          Math.abs(p.dx) > 0.5 ? step : 1.6,
+          0.28,
+          Math.abs(p.dx) > 0.5 ? 1.6 : step,
+          'steel' + v,
+          '#899199',
+        );
+      }
+      for (const side of [-1, 1]) {
+        const ox = -p.dz * side * 0.83,
+          oz = p.dx * side * 0.83;
+        for (let j = 0; j <= 4; j++) {
+          const q = mix(p.a, p.b, j / 4);
+          box(q.x + ox, q.y + 0.48, q.z + oz, 0.055, 0.96, 0.055, 'plain', '#444f5a');
+          if (j < 4) {
+            const r = mix(p.a, p.b, (j + 0.5) / 4);
+            box(
+              r.x + ox,
+              r.y + 0.94,
+              r.z + oz,
+              Math.abs(p.dx) > 0.5 ? p.length / 4 : 0.07,
+              0.07,
+              Math.abs(p.dx) > 0.5 ? 0.07 : p.length / 4,
+              'plain',
+              j === 0 ? '#4fe7ff' : '#586875',
+            );
+          }
+        }
+      }
+    }
   }
   const b = s.cover;
-  box(b.x, 0.51, b.z, b.w, 1.02, b.d, 'bin' + v);
-  box(b.x, 1.05, b.z, 1.07, 0.09, 1.08, 'stripe' + v);
+  box(b.x, 0.55, b.z, b.w, 1.1, b.d, 'bin' + v, '#a2a98d');
+  box(b.x, 1.13, b.z, b.w + 0.08, 0.12, b.d + 0.08, 'steel' + v);
+  for (const side of [-1, 1])
+    box(b.x + side * 0.4, 0.12, b.z + 0.45, 0.14, 0.23, 0.18, 'plain', '#252b32');
+  // Windows, sill depths, downpipes and signs are attached to street-facing walls.
   for (const side of [-1, 1]) {
-    const edge = side < 0 ? -11 : 14;
-
-    // Short frontage ends before a bend, leaving room for the inside lane.
+    const edge = side < 0 ? -5.49 : 4.43,
+      front = edge - side * 0.04;
     for (let bay = 0; bay < 4; bay++) {
-      const wall = s.walls.find((b) => b.id === 'facade' + side + '_' + bay);
-      if (!wall) continue;
-      const t = 5 + bay * 7,
-        wide = 6.85,
-        high = wall.h - 2;
-      place(edge + side * 2.2, high / 2 - 1, t, 4.3, high + 2, wide, (bay % 2 ? 'brick' : 'cement') + v);
-      place(edge - side * 0.08, 1.55, t, 0.16, 3.1, wide - 0.3, 'shutter' + v);
-      for (let row = 0; row < Math.floor(high / 3.2) - 1; row++)
-        for (let win = 0; win < 2; win++) {
-          const y = 4.4 + row * 3.2,
-            z = t + (win ? 1.55 : -1.55);
-          place(edge - side * 0.12, y, z, 0.2, 1.55, 1.9, 'steel' + v);
-          place(
-            edge - side * 0.25,
-            y,
-            z,
-            0.08,
-            1.28,
-            1.62,
-            'plain',
-            rnd() < 0.21 ? '#ce864c' : '#31384d',
-          );
-          place(edge - side * 0.31, y, z, 0.06, 1.32, 0.09, 'plain', '#252938');
-        }
-      place(edge - side * 0.3, 3.18, t, 0.6, 0.17, wide, 'steel' + v);
+      const t = 3.7 + bay * 7.6;
+      const stair = side < 0 && s.links.some((l) => l.to === 'R') && t < 12.2;
+      if (stair) continue;
+      if (side < 0 && s.jumps.some((g) => Math.abs(t - 16) < 2.5)) continue;
+      for (let row = 0; row < 2; row++) {
+        const y = 4.6 + row * 3.1;
+        place(front, y, t, 0.12, 1.68, 1.66, 'steel' + v, '#696c71');
+        place(
+          front - side * 0.09,
+          y,
+          t,
+          0.055,
+          1.4,
+          1.38,
+          'plain',
+          rnd() < 0.28 ? '#a67548' : '#202e42',
+        );
+        place(front - side * 0.13, y, t, 0.06, 1.46, 0.055, 'plain', '#353943');
+        place(front - side * 0.18, y - 0.86, t, 0.4, 0.12, 1.94, 'cement' + v);
+      }
       if (bay % 2 === 0) {
-        place(edge - side * 0.45, 4.1, t - 2, 0.8, 0.7, 0.85, 'shutter' + v);
-        place(edge - side * 0.48, 2, t + 2, 0.18, 4, 0.18, 'steel' + v);
+        place(front - side * 0.25, 3.6, t + 1.5, 0.6, 0.65, 0.9, 'shutter' + v);
+        place(front - side * 0.62, 3.6, t + 1.5, 0.06, 0.5, 0.76, 'steel' + v);
       }
+      if (side < 0 || [6, 26].every((door) => Math.abs(t + 2.8 - door) > 1.35))
+        place(front - side * 0.08, 4.5, t + 2.8, 0.14, 9, 0.14, 'steel' + v, '#6e746f');
     }
   }
-  // Street-level shop fronts stay outside the two-metre running strip.
-  if (s.shop !== undefined) {
-    const t = s.shop;
-    place(-3.65, 1.6, t, 0.5, 3.2, 5, 'tile' + v);
-    place(-3.33, 1.35, t, 0.12, 2.4, 3.6, 'shutter' + v);
-    place(-3.1, 3.1, t, 0.9, 0.16, 5, 'plain', '#803332');
-    place(-3.05, 3.85, t, 0.17, 0.95, 3.7, 'label' + (s.i % 6), '#ffd6a0', true);
-    for (let j = 0; j < 3; j++)
-      place(-3.15, 2.6, t - 1.6 + j * 1.45, 0.23, 0.47, 0.25, 'plain', '#ff9a3c');
-    for (let j = 0; j < 8; j++)
-      place(-2.96, 0.8 + j * 0.14, t + 2, 0.15, 0.14, 0.15, 'plain', j % 2 ? '#b9ab8c' : '#ff3b3b');
-    place(-2.95, 1.1, t - 2, 0.1, 0.8, 0.63, 'poster' + v);
-    for (let j = 0; j < 18; j++)
+  for (const t of [6, 26]) {
+    for (const side of [-1, 1]) place(4.36, 1.35, t + side * 1.08, 0.11, 2.7, 0.1, 'plain', '#c27a39');
+    place(4.34, 2.72, t, 0.13, 0.12, 2.28, 'plain', '#ff9a3c');
+    place(4.31, 2.96, t, 0.12, 0.32, 2.05, 'label' + (s.i % 6), '#e6b179', true);
+  }
+  for (const t of [11, 22]) {
+    const u = t === 11 ? 8.4 : 9;
+    place(u, 2.35, t - 0.15, 1.35, 0.12, 0.04, 'plain', '#ff9a3c');
+  }
+  const shopT = 16;
+  place(4.15, 3.15, shopT, 0.9, 0.13, 6.8, 'plain', '#6e292a');
+  place(4.26, 3.93, shopT, 0.21, 1.14, 3.5, 'label' + (s.i % 6), '#ffb87a', true);
+  place(4.32, 1.36, 17.1, 0.08, 2.14, 3.7, 'shutter' + v, '#898176');
+  for (let j = 0; j < 3; j++) place(3.92, 2.75, 14 + j * 1.5, 0.28, 0.43, 0.28, 'plain', '#ff9a3c');
+  if (s.template.street === 'barber' || s.i < 2) {
+    place(4.03, 1.7, 13, 0.19, 1.25, 0.19, 'steel' + v);
+    for (let j = 0; j < 9; j++)
       place(
-        -1.65 + rnd() * 0.8,
-        0.009,
-        t + (rnd() - 0.5) * 5,
-        0.08 + rnd() * 0.24,
-        0.01,
-        0.08 + rnd() * 0.35,
+        3.97,
+        1.16 + j * 0.13,
+        13,
+        0.22,
+        0.12,
+        0.23,
         'plain',
-        '#785035',
+        j % 3 === 0 ? '#b9ab8c' : j % 3 === 1 ? '#ff3b3b' : '#3a63ff',
       );
   }
-  for (const w of s.walls) {
-    if (w.id.startsWith('facade') || w.id === 'shop') continue;
-    box(w.x, w.y, w.z, w.w, w.h, w.d, w.kind + v);
-    if (!w.id.includes('roof')) {
-      const sign = w.id.includes('-1') ? -1 : 1;
-      const u = -sign * 0.19;
-      box(
-        w.x - c.dz * u,
-        w.y + 0.78,
-        w.z + c.dx * u,
-        c.dx ? 1.2 : 0.07,
-        0.09,
-        c.dx ? 0.07 : 1.2,
-        'plain',
-        w.id[0] === 'I' ? '#ff9a3c' : '#4fe7ff',
-      );
-    }
-  }
-  for (const layer of ['R', 'I', 'G', 'U']) {
-    const a = s.entry[layer],
-      b = s.exit[layer],
-      w = a.w / 2;
-    // Give slabs a visible edge and foundations down to the storm drain.
-    for (const side of [-1, 1]) {
-      const n = side * w;
-      const edge = (q) => ({ x: q.x - c.dz * n, y: q.y, z: q.z + c.dx * n });
-      const near = edge(a),
-        far = edge(b);
-      const base = (q) => ({ ...q, y: Math.min(-5.4, q.y - 0.18) });
-      for (const [lo, hi] of [
-        [0.02, 0.1],
-        [0.44, 0.49],
-        [0.94, 0.98],
-      ]) {
-        const l = mix(near, far, lo),
-          r = mix(near, far, hi);
-        face([l, r, base(r), base(l)], 1, 2, (layer === 'I' ? 'brick' : 'cement') + v, '#6e6558');
-      }
-    }
-  }
-  if (s.template.street === 'market')
-    for (let j = 0; j < 4; j++)
-      place(
-        3.35 + 0.55 * (j % 2),
-        0.32 + Math.floor(j / 2) * 0.57,
-        16 + (j % 2),
-        0.58,
-        0.58,
-        0.68,
-        'crate' + (j % 3),
-      );
-  if (s.template.street === 'barricade') place(-2.75, 0.6, 16, 0.42, 1.2, 2.2, 'stripe' + v);
-  if (s.template.room === 'kitchen') {
-    const p = mix(s.entry.I, s.exit.I, 0.66);
-    box(p.x - c.dz * 1.37, p.y + 0.54, p.z + c.dx * 1.37, 0.42, 1.08, 0.65, 'shutter' + v);
-  }
-  if (s.template.roof === 'skylight') {
-    const p = mix(s.entry.R, s.exit.R, 0.6);
-    box(p.x + c.dz * 1.9, p.y + 0.13, p.z - c.dx * 1.9, 0.9, 0.26, 1.7, 'tile' + v);
-  }
-  if (s.template.drain === 'water') {
-    const p = mix(s.entry.U, s.exit.U, 0.55);
-    box(p.x, p.y + 0.01, p.z, c.dx ? 4.6 : 2, 0.01, c.dx ? 2 : 4.6, 'plain', '#28484b');
-  }
-  for (let j = 0; j < 3; j++) {
-    const y = 6.5 + j * 0.29,
-      t = 11 + j * 2.35;
-    place(0, y, t, 19, 0.035, 0.045, 'plain', '#242738');
-  }
-  if (s.i % 4 === 2) {
-    place(0, 6.4, 22, 17, 0.45, 2.3, 'steel' + v);
-    place(0, 6.12, 20.97, 12, 0.05, 0.12, 'plain', '#aa346b');
-    place(0, 7.25, 21.04, 17, 0.13, 0.14, 'steel' + v);
-    for (let k = -8; k <= 8; k += 2) place(k, 6.9, 21.04, 0.08, 0.9, 0.12, 'steel' + v);
-  }
-  if (s.i === plan.cells.length - 1) {
-    place(0, 6.1, 31, 24, 0.75, 0.68, 'steel' + v);
-    place(0, 5.66, 30.64, 18, 0.14, 0.1, 'plain', '#ff9a3c');
-    for (const side of [-1, 1]) {
-      place(side * 12, 3, 31, 0.8, 6, 1.1, 'steel' + v);
-      place(side * 11.52, 2.8, 30.7, 0.14, 5.6, 0.12, 'plain', '#ff9a3c');
-    }
-    place(0, 7.15, 31, 5.7, 1.45, 0.29, 'label5', '#ffbc76', true);
+  for (const t of [9, 21]) {
+    place(12.5, 0.48, t, 1.7, 0.96, 1.1, s.template.room === 'kitchen' ? 'shutter' + v : 'crate' + v);
+    place(12.5, 1.01, t, 1.86, 0.08, 1.24, 'steel' + v);
   }
   if (s.i === 0) {
-    place(0, -0.04, 2, 5, 0.08, 4, 'check0');
-    place(0, 2.9, 0.3, 5, 0.18, 1.3, 'tile2');
-    place(-2.35, 1.2, 1.8, 0.2, 2.4, 4, 'tile1');
-    place(2.28, 1.3, 1.5, 0.2, 2.6, 3, 'shutter1');
-    place(1.68, 0.82, 2.2, 0.92, 0.18, 2, 'crate1');
-    for (const t of [1.5, 2.9]) place(1.8, 0.4, t, 0.12, 0.8, 0.12, 'steel0');
-    place(1.65, 1.15, 2, 0.22, 0.4, 0.2, 'steel2');
-    place(1.54, 1.21, 2.55, 0.12, 0.1, 0.38, 'steel1');
-    place(-1.75, 0.5, 1, 0.78, 1, 1.7, 'steel0');
-    place(-2.04, 1.2, 1, 0.12, 1.4, 1.62, 'tile2');
-    place(-1.77, 1.09, 1, 0.32, 0.18, 0.8, 'steel1');
-    place(-1.77, 1.13, 1.6, 0.24, 0.24, 0.23, 'cement0');
-    place(-1.8, 2.27, 1.6, 0.52, 0.08, 0.52, 'plain', '#7dff1a');
-    place(-1.48, 0.17, 3, 1.05, 0.34, 1.25, 'steel0');
-    place(-1.91, 1.12, 3, 0.18, 2.15, 1.2, 'steel2');
-    place(-1.48, 2.25, 3, 1.05, 0.18, 1.25, 'shutter1');
-    for (const dx of [-0.18, 0.18]) {
-      place(-1.55 + dx, 0.65, 3, 0.14, 0.74, 0.16, 'steel1');
-      place(-1.55 + dx * 1.6, 1.27, 3, 0.12, 0.54, 0.16, 'cement0');
+    place(12.45, 0.2, 2.5, 1.7, 0.4, 2.4, 'steel0');
+    place(13.16, 1.3, 2.5, 0.18, 2.2, 2.3, 'steel1');
+    place(12.45, 2.45, 2.5, 1.75, 0.16, 2.4, 'steel1');
+    place(12.45, 2.34, 2.5, 1.1, 0.07, 1.4, 'plain', '#7dff1a');
+    place(12.45, 1.25, 2.5, 0.44, 0.56, 0.28, 'steel2');
+    for (const side of [-1, 1]) {
+      place(12.45 + side * 0.17, 0.67, 2.5, 0.13, 0.64, 0.15, 'steel1');
+      place(12.45 + side * 0.32, 1.25, 2.5, 0.12, 0.52, 0.16, 'cement0');
     }
-    place(-1.55, 1.22, 3, 0.36, 0.48, 0.22, 'steel0');
-    for (let k = 0; k < 4; k++)
-      place(-1.55, 1.06 + k * 0.095, 2.85, 0.35, 0.035, 0.07, 'plain', '#b9ab8c');
-    place(-1.55, 1.65, 3, 0.24, 0.27, 0.2, 'cement1');
-    place(-1.55, 1.68, 2.89, 0.19, 0.034, 0.03, 'plain', '#4fe7ff');
-    place(-1.55, 2.12, 3, 0.55, 0.06, 0.62, 'plain', '#7dff1a');
-    place(1.43, 1.42, 2.7, 0.08, 0.98, 0.08, 'steel1');
-    place(1.27, 1.86, 2.7, 0.47, 0.09, 0.3, 'plain', '#ff9a3c');
-    for (let k = 0; k < 2; k++) {
-      place(1.59, 1.06, 1.6 + k * 0.45, 0.23, 0.28, 0.16, 'cement' + k);
-      place(1.59, 1.09, 1.51 + k * 0.45, 0.16, 0.035, 0.024, 'plain', '#242738');
-    }
+    place(12.45, 1.78, 2.5, 0.27, 0.31, 0.25, 'steel1');
+    place(12.45, 1.81, 2.35, 0.2, 0.04, 0.04, 'plain', '#4fe7ff');
+    place(12.45, 0.23, 6, 2.3, 0.46, 1.7, 'crate1');
+    place(12.45, 0.91, 6, 2.4, 0.12, 1.8, 'steel0');
+    for (const side of [-1, 1]) place(12.45 + side * 0.9, 0.5, 6, 0.12, 0.9, 0.14, 'steel1');
+    place(12.2, 1.02, 5.7, 0.12, 0.14, 0.55, 'steel2');
+    place(12.2, 1.08, 5.6, 0.15, 0.1, 0.1, 'cement1');
+    place(13.1, 1.53, 6.5, 0.09, 1.05, 0.09, 'steel1');
+    place(12.85, 2.06, 6.5, 0.7, 0.1, 0.5, 'plain', '#ff9a3c');
+    place(13.78, 1.6, 6, 0.08, 1.5, 1.45, 'steel0');
   }
-  const r = mix(s.entry.R, s.exit.R, 0.32);
-  box(r.x + c.dz * 2, r.y + 0.6, r.z - c.dx * 2, 1.1, 1.2, 1.1, 'steel' + v);
-  if (s.jumps.length) {
-    const p = s.jumps[0].b;
-    box(p.x, p.y + 0.015, p.z, c.dx ? 0.12 : 2.8, 0.03, c.dx ? 2.8 : 0.12, 'stripe' + v);
-  }
-  if (s.entry.I.y === s.exit.I.y) {
-    const p = mix(s.entry.I, s.exit.I, 0.76);
-    for (const sign of [-1, 1])
+  // Roof doors, chimney flashing and narrow catwalks belong to separate houses.
+  place(-7.1, 10.55, 23.92, 1.05, 1.88, 0.09, 'steel' + v);
+  place(-7.1, 11.57, 23.84, 1.2, 0.08, 0.08, 'plain', '#4fe7ff');
+  place(-12.05, 11.85, 7, 0.18, 0.9, 0.18, 'steel' + v);
+  for (const t of [14.58, 17.42]) place(-9.5, 9.62, t, 7.7, 0.04, 0.18, 'stripe' + v, '#b9ab8c');
+  for (const p of s.slabs.filter((p) => p.bridge)) {
+    for (const sign of [-1, 1]) {
+      for (const q of [p.a, p.b])
+        box(q.x - p.dz * sign * 0.77, q.y + 0.5, q.z + p.dx * sign * 0.77, 0.07, 1, 0.07, 'steel' + v);
+      const q = mix(p.a, p.b, 0.5);
       box(
-        p.x - c.dz * sign * 1.38,
-        p.y + 1.18,
-        p.z + c.dx * sign * 1.38,
-        c.dx ? 0.16 : 0.12,
-        2.36,
-        c.dx ? 0.12 : 0.16,
+        q.x - p.dz * sign * 0.77,
+        q.y + 0.99,
+        q.z + p.dx * sign * 0.77,
+        Math.abs(p.dx) > 0.5 ? p.length : 0.06,
+        0.06,
+        Math.abs(p.dx) > 0.5 ? 0.06 : p.length,
         'plain',
-        '#ff9a3c',
+        '#586875',
       );
-    box(p.x, p.y + 2.4, p.z, c.dx ? 0.18 : 2.86, 0.12, c.dx ? 2.86 : 0.18, 'plain', '#ff9a3c');
+    }
   }
-  if (plan.relays.includes(s.i) || s.i === plan.cells.length - 1) {
-    place(-2, 3, 2, 0.35, 6, 0.35, 'steel' + v);
-    place(-2, 5.6, 2, 0.55, 0.85, 0.55, 'plain', '#7dff1a');
+  for (const d of s.devices) {
+    for (const side of [-1, 1]) box(d.x + side * 0.74, -2.25, d.z, 0.07, 4.5, 0.07, 'plain', '#4fe7ff');
+    for (let y = -4.2; y < 0; y += 0.35) box(d.x, y, d.z + 0.7, 1.5, 0.06, 0.08, 'steel' + v);
+    for (const side of [-1, 1]) box(d.x + side * 1.02, 0.025, d.z, 0.04, 0.05, 2, 'plain', '#4fe7ff');
+  }
+  // Ceiling pipes and small lamps make the drain read as an enclosed utility space.
+  for (const t of [4, 12, 20, 28]) {
+    place(-1.72, -1.65, t, 0.15, 0.15, 7.5, 'steel' + v);
+    place(1.97, -1.55, t, 0.06, 0.18, 0.78, 'plain', '#4f7c87');
+  }
+  for (let j = 0; j < 3; j++) place(0, 7.2 + j * 0.24, 8 + j * 6, 9.9, 0.025, 0.035, 'plain', '#1f2733');
+  if (s.i % 5 === 3) {
+    place(0, 6.05, 24, 10.4, 0.44, 1.8, 'steel' + v);
+    for (const side of [-1, 1]) place(side * 4.95, 3.0, 24, 0.28, 6, 0.28, 'steel' + v);
+    place(0, 5.8, 23.25, 8, 0.06, 0.08, 'plain', '#803557');
+  }
+  if (plan.relays.includes(s.i)) {
+    place(2.9, 2.25, 1, 0.22, 4.5, 0.22, 'steel' + v);
+    place(2.9, 4.3, 1, 0.5, 0.4, 0.5, 'plain', '#7dff1a');
+  }
+  if (s.i === plan.cells.length - 1) {
+    for (const side of [-1, 1]) place(side * 4.5, 3, 31, 0.65, 6, 0.8, 'cement' + v);
+    place(0, 5.8, 31, 9.6, 0.7, 0.8, 'steel' + v);
+    place(0, 5.4, 30.55, 8, 0.1, 0.08, 'plain', '#ff9a3c');
   }
 }
 export function skyline(scene, plan) {

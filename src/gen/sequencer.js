@@ -6,11 +6,13 @@ import { templates, buildSegment, compatible, layers } from './segments.js';
 export function sectionCosts(section) {
   return layers.map((k) =>
     section.reduce((sum, s) => {
-      const a = s.entry[k],
-        b = s.exit[k];
+      const points = s.paths[k];
+      const length = points
+        .slice(1)
+        .reduce((n, p, i) => n + Math.hypot(p.x - points[i].x, p.z - points[i].z, p.y - points[i].y), 0);
       return (
         sum +
-        Math.hypot(b.x - a.x, b.z - a.z, b.y - a.y) / config.sprint +
+        length / config.sprint +
         config.threatTime * s.threat +
         Number(k === 'R' && s.jumps.length > 0) * config.jumpTime
       );

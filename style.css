@@ -302,3 +302,4 @@ header,
 footer {
   background: #0a0f2499;
 }
+#combat-readout{position:fixed;top:58%;left:50%;transform:translateX(-50%);font:12px monospace;letter-spacing:.08em;text-shadow:1px 2px #0a0f24;pointer-events:none}body:not(.playing) #combat-readout,.photo #combat-readout{display:none}

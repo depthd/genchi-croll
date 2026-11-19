@@ -19,7 +19,7 @@ export function pipeline(renderer, height) {
       c*=1.-.36*dot(v-.5,v-.5); c*=.99+.01*mod(p.y,2.);
       gl_FragColor=vec4(c,1.);
       #include <colorspace_fragment>
-      gl_FragColor.rgb=floor(gl_FragColor.rgb*31.+d)/31.;
+      gl_FragColor.rgb=floor(gl_FragColor.rgb*63.+.5+(d-.5)*.18)/63.;
     }`,
   });
   screen.add(new T.Mesh(new T.PlaneGeometry(2, 2), material));

@@ -43,9 +43,9 @@ Object.assign(config, {
   joinTolerance: 0.25,
   layers: {
     G: { y: 0, offset: 0, width: 5, kind: 'open' },
-    R: { y: 9.6, offset: -8, width: 3, kind: 'bridge' },
-    I: { y: 3.2, offset: 6, width: 3, kind: 'door' },
-    U: { y: -4.5, offset: 11, width: 4, kind: 'hatch' },
+    R: { y: 9.6, offset: -9.5, width: 8, kind: 'bridge' },
+    I: { y: 0.04, offset: 8.8, width: 3.4, kind: 'door' },
+    U: { y: -4.5, offset: 0, width: 4, kind: 'hatch' },
   },
 });
 export function canTraverse(a, b, kind = 'gap') {

@@ -1,3 +1,4 @@
+import { boxCoordinates } from './boxes.js';
 import { sample } from './physics.js';
 function hitsBox(a, b, x, y, z, w, h, d) {
   let lo = 0,
@@ -23,7 +24,11 @@ function hitsBox(a, b, x, y, z, w, h, d) {
 }
 export function visible(a, b, near) {
   for (const s of near) {
-    for (const w of s.walls) if (hitsBox(a, b, w.x, w.y, w.z, w.w, w.h, w.d)) return false;
+    for (const w of s.walls) {
+      const l = boxCoordinates(w, a.x, a.z),
+        r = boxCoordinates(w, b.x, b.z);
+      if (hitsBox({ ...l, y: a.y }, { ...r, y: b.y }, 0, w.y, 0, w.w, w.h, w.d)) return false;
+    }
     const k = s.cover;
     if (hitsBox(a, b, k.x, k.y + k.h / 2, k.z, k.w, k.h, k.d)) return false;
     for (const p of s.slabs) {
@@ -48,9 +53,9 @@ export function assignSight(plan, segments) {
       for (const side of [0, -1, 1, -1.8, 1.8]) {
         if (s.sight) break;
         const eye = {
-          x: target.x + c.dx * 12 * sign - c.dz * side,
+          x: c.x + c.dx * (23.9 + 13 * sign) - c.dz * side,
           y: 1.6,
-          z: target.z + c.dz * 12 * sign + c.dx * side,
+          z: c.z + c.dz * (23.9 + 13 * sign) + c.dx * side,
         };
         if (
           !near.some((n) =>

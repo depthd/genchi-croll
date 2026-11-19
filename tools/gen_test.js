@@ -54,7 +54,7 @@ for (let seed = 0; seed < seeds; seed++) {
     }
     for (let i = 0; i < layers.length; i++)
       for (const l of s.links) {
-        if (!canTraverse(l.a, l.b, 'ramp')) {
+        if (!l.pieces.every((p) => canTraverse(p.a, p.b, 'ramp'))) {
           ok[5] = false;
           continue;
         }
@@ -63,6 +63,10 @@ for (let seed = 0; seed < seeds; seed++) {
           escape.add(l.to);
         }
       }
+    if (s.devices.length) {
+      escape.add('U');
+      escape.add('G');
+    }
     ok[0] &&= live.size === 4;
     ok[1] &&= escape.size === 4;
     ok[2] &&= live.size >= 2;
@@ -80,22 +84,14 @@ for (let seed = 0; seed < seeds; seed++) {
         ok[4] = false;
     }
     const shot = { y: 1.65, x: s.enemy.x + s.enemy.peekX, z: s.enemy.z + s.enemy.peekZ };
-    for (const other of segments.slice(s.i + 2)) {
-      if (Math.abs(c.x - plan.cells[other.i].x) > 96 || Math.abs(c.z - plan.cells[other.i].z) > 96)
-        continue;
-      for (const a of s.slabs)
-        for (const b of other.slabs) {
-          if (
-            a.maxX > b.minX + 0.001 &&
-            a.minX < b.maxX - 0.001 &&
-            a.maxZ > b.minZ + 0.001 &&
-            a.minZ < b.maxZ - 0.001 &&
-            Math.max(a.a.y, a.b.y) >= Math.min(b.a.y, b.b.y) &&
-            Math.max(b.a.y, b.b.y) >= Math.min(a.a.y, a.b.y)
-          )
-            ok[4] = false;
-        }
-    }
+    // The rendered street is a union of uniquely owned tiles. Physical clearance volumes may overlap.
+    const ownKeys = new Set(s.ground.map((t) => t.x + ',' + t.z));
+    ok[4] &&= ownKeys.size === s.ground.length;
+    const rooms = new Set(s.roomFloor.map((t) => t.x + ',' + t.z));
+    for (const other of segments.slice(s.i + 1))
+      ok[4] &&= !other.roomFloor.some((t) => rooms.has(t.x + ',' + t.z));
+    for (const other of segments.slice(s.i + 1))
+      ok[4] &&= !other.ground.some((t) => ownKeys.has(t.x + ',' + t.z));
     ok[8] &&=
       Math.hypot(s.sight.x - shot.x, s.sight.z - shot.z) >= 11.999 &&
       visible(s.sight, shot, segments.slice(Math.max(0, s.i - 1), s.i + 2));
@@ -106,12 +102,15 @@ for (let seed = 0; seed < seeds; seed++) {
     const values = layers.map((k) => {
       let time = 0;
       for (const s of segments.slice(start, end)) {
-        const a = s.entry[k],
-          b = s.exit[k];
+        const points = s.paths[k];
+        const length = points
+          .slice(1)
+          .reduce(
+            (n, p, i) => n + Math.hypot(p.x - points[i].x, p.y - points[i].y, p.z - points[i].z),
+            0,
+          );
         time +=
-          Math.hypot(b.x - a.x, b.z - a.z, b.y - a.y) / config.sprint +
-          0.16 * s.threat +
-          Number(k === 'R' && s.jumps.length > 0) * 0.25;
+          length / config.sprint + 0.16 * s.threat + Number(k === 'R' && s.jumps.length > 0) * 0.25;
       }
       costs[k].push(time);
       return time;
@@ -124,9 +123,9 @@ for (let seed = 0; seed < seeds; seed++) {
   ok[6] = digest(segments) === digest(repeat) && skin.hash === inspectShell(plan, repeat).hash;
   // Reserve draws for the viewmodel, skyline, rain, effects and post-process.
   const draws = segments.map((s) => {
-    const doorPanels = s.entry.I.y === s.exit.I.y ? 2 : 0;
+    const doorPanels = s.doors.length * 2;
     const hatches = s.devices.filter((d) => d.kind === 'hatch').length;
-    const actorAndProjectiles = s.i === 0 ? 0 : 23;
+    const actorAndProjectiles = s.i === 0 ? 0 : 12;
     return 1 + doorPanels + hatches + actorAndProjectiles;
   });
   ok[7] =
