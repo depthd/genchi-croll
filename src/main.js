@@ -1,3 +1,4 @@
+import {atmosphere} from './audio.js';
 import {specialistKind,specialist,updateSpecial} from './specialists.js';
 import {radio} from './radio.js';
 import {steerBot} from './gen/segments.js';
@@ -176,7 +177,12 @@ const direction = new THREE.Vector3();
 const effects = [];
 const flashMaterial = new THREE.LineBasicMaterial({ color: '#ffcf82' });
 const hostileMaterial = new THREE.LineBasicMaterial({ color: '#ff5a4e' });
-let audio,armed=true;
+let audio,mixBus,armed=true,nextStep=0,nextTick=0;
+const volume=document.querySelector('#volume');
+try{volume.value=localStorage.getItem('genchi-volume')??65;}catch{}
+function setVolume(){document.querySelector('#volume-value').value=volume.value+'%';mixBus?.volume(volume.value/100);}
+volume.oninput=()=>{setVolume();try{localStorage.setItem('genchi-volume',volume.value);}catch{}};
+setVolume();
 const dispatch=radio(()=>sound('empty'));
 let state = 'intro';
 let seconds=config.startTime, bodySpeed=0, transfer=0;
@@ -204,7 +210,7 @@ function sound(type) {
   tone.frequency.exponentialRampToValueAtTime(type === 'fire' ? 34 : 89, now + duration);
   volume.gain.setValueAtTime(type === 'fire' ? .19 : .064, now);
   volume.gain.exponentialRampToValueAtTime(.001, now + duration);
-  tone.connect(volume).connect(audio.destination);
+  tone.connect(volume).connect(mixBus?.input??audio.destination);if(type==='fire')mixBus?.shot();
   tone.start(now);
   tone.stop(now + duration);
 }
@@ -253,7 +259,7 @@ function reset() {
   weapon.visible=armed;
   if(query.get('shot')==='4'){camera.position.set(.15,1.55,.15);camera.lookAt(1.35,1.12,-2.4);}
   delta.textContent='';
-  runTime = 0;
+  runTime = 0;nextStep=nextTick=0;
   ammo = 6;
   cooldown = recoil = reloadTime = hurt = hitMark = 0;
   for(const e of enemies.splice(0))e.group.removeFromParent();
@@ -279,7 +285,7 @@ function enter() {
   document.body.classList.add('playing');
   const context = window.AudioContext ?? window.webkitAudioContext;
   if (context) {
-    audio ??= new context();
+    audio ??= new context();mixBus??=atmosphere(audio,volume.value/100);
     void audio.resume().catch(() => {});
   }
   try {
@@ -455,6 +461,8 @@ function update(dt) {
   if(body.y>2&&body.y<4)dispatch.say('room',runTime);
   if(seconds<15)dispatch.say('low',runTime);
   dispatch.update(runTime);
+  if(mixBus&&runTime>=nextTick){mixBus.tick();nextTick=runTime+(seconds<15?.35:1);mixBus.ambience(body.y<0);}
+  if(mixBus&&runTime>=nextStep&&grace>0&&Math.hypot(vx,vz)>.7){mixBus.step(body.y);nextStep=runTime+.32;}
   const clock=Math.max(0,seconds);
   timeReadout.textContent=String(Math.floor(clock/60)).padStart(2,'0')+':'+(clock%60).toFixed(1).padStart(4,'0');
   timeReadout.style.color=seconds<10?'#ff3b3b':seconds<20?'#ff9a3c':'#7dff1a';
@@ -465,7 +473,7 @@ function update(dt) {
   damage.style.opacity = String(hurt);
   document.querySelector('#crosshair').textContent = hitMark > 0 ? '×' : '+';
   if(seconds<=0){
-    dispatch.say('death',runTime);state='transfer'; transfer=0; save(); keys.clear();
+    dispatch.say('death',runTime);mixBus?.transfer();state='transfer'; transfer=0; save(); keys.clear();
     title.textContent='Тело №'+campaign.attempts+' деактивировано';
     message.textContent='Сознание переносится… Ближе всех подобрался: '+Math.round(100*campaign.record)+'%';
   }
