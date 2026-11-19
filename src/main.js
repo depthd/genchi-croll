@@ -68,11 +68,11 @@ scene.updateMatrixWorld(true);
 const walls = colliders.map((mesh) => new THREE.Box3().setFromObject(mesh));
 
 let feet=0, vertical=0, grace=0, jumpQueue=0, vx=0, vz=0, inserted=0, reloadPhase='';
-const darkSteel = solid('#41424c');
+const darkSteel = solid('#1d2447');
 const silver = solid('#8e8990');
 const charcoal = solid('#6b3e22');
 const amber = glow('#ffac46');
-const optic = glow('#ff344a');
+const optic = glow('#3a63ff');
 const burst = glow('#ffbe65');
 const weapon = new THREE.Group();
 camera.add(weapon);
@@ -131,7 +131,7 @@ const enemies = ambushes.map(({ kind, x, z, peekX, peekZ }) => {
   block(group, charcoal, -.30, -.125, .32, .11, .10, .20);
   const muzzle = block(group, burst, -.30, -.12, .48, .19, .14, .19);
   muzzle.visible = false;
-  return { x, z, peekX, peekZ, standing, group, head, chest, muzzle };
+  return { x, z, peekX, peekZ, standing, group, head, chest, muzzle, rifle:standing };
 });
 
 const keys = new Set();
@@ -216,10 +216,11 @@ function reset() {
     enemy.group.visible = true;
     enemy.group.position.set(enemy.x, enemy.standing ? 1.25 : .46, enemy.z);
     enemy.muzzle.visible = false;
-    enemy.health = 2;
+    enemy.health = enemy.rifle?3:2; enemy.volley=0;
     enemy.alert = null;
     enemy.cycle = -1;
   }
+  for(const b of bullets.splice(0))b.mesh.removeFromParent();
   for (const { line } of effects.splice(0)) {
     line.removeFromParent();
     line.geometry.dispose();
@@ -277,8 +278,9 @@ function shoot() {
   if (!hit) return;
   const enemy = enemies.find(({ head, chest }) => hit.object === head || hit.object === chest);
   if (enemy) {
-    enemy.health -= hit.object === enemy.head ? 2 : 1;
+    enemy.health -= hit.object === enemy.head ? 3 : 1;
     enemy.group.visible = enemy.health > 0;
+    if(enemy.health<=0){const bonus=hit.object===enemy.head?config.headBonus:config.killBonus;seconds=Math.min(config.cap,seconds+bonus);delta.textContent='+'+bonus.toFixed(1);}
     hitMark = .16;
     enemy.alert ??= runTime;
   }
@@ -323,6 +325,22 @@ function move(dt) {
   camera.rotation.set(pitch + recoil * .023, yaw, 0, 'YXZ');
 }
 
+const bullets=[];
+function projectiles(dt){
+  for(let i=bullets.length-1;i>=0;i--){
+    const b=bullets[i], step=Math.min(b.range,dt*70);
+    const previous=b.mesh.position;
+    ray.set(previous,b.dir);ray.far=step;
+    let stopped=ray.intersectObjects(colliders,false).length>0;
+    const next=to.copy(previous).addScaledVector(b.dir,step);
+    if(!stopped){
+      const closest=new THREE.Line3(previous,next).closestPointToPoint(camera.position,true,from);
+      if(closest.distanceTo(camera.position)<.42){if(!query.has('god'))seconds-=b.damage;delta.textContent='−'+b.damage.toFixed(1);hurt=.8;stopped=true;}
+    }
+    previous.copy(next);b.range-=step;
+    if(stopped||b.range<=0){b.mesh.removeFromParent();bullets.splice(i,1);}
+  }
+}
 function updateEnemies(dt) {
   for (const enemy of enemies) {
     if (enemy.health <= 0) continue;
@@ -344,16 +362,17 @@ function updateEnemies(dt) {
       group.position.y = THREE.MathUtils.lerp(group.position.y, .46 + exposure * .91, blend);
     }
     enemy.muzzle.visible = false;
-    if (phase < 1.33 || phase > 1.94 || enemy.cycle === cycle) continue;
+    const shot=Math.min(enemy.rifle?2:0,Math.floor((phase-1.33)/.14));
+    if(age>=0&&phase>.91&&phase<1.33){enemy.muzzle.visible=true;if(enemy.warned!==cycle){sound('empty');enemy.warned=cycle;}}
+    if (phase < 1.33 || phase > 1.94 || enemy.cycle === cycle*3+shot) continue;
     from.copy(group.position);
     from.y += .04;
     to.copy(camera.position);
     if (hasCover(from, to)) continue;
-    enemy.cycle = cycle;
+    enemy.cycle = cycle*3+shot;
     enemy.muzzle.visible = true;
-    seconds -= 3.5;
-    hurt = .66;
-    trail(from, to, hostileMaterial, .11);
+    const mesh=block(scene,burst,from.x,from.y,from.z,.045,.045,.48);
+    mesh.lookAt(to); bullets.push({mesh,dir:to.clone().sub(from).normalize(),range:40,damage:enemy.rifle?3:4});
     sound('enemy');
   }
 }
@@ -378,7 +397,7 @@ function update(dt) {
     }
   }
   move(dt);
-  updateEnemies(dt);
+  updateEnemies(dt);projectiles(dt);
   const clock=Math.max(0,seconds);
   timeReadout.textContent=String(Math.floor(clock/60)).padStart(2,'0')+':'+(clock%60).toFixed(1).padStart(4,'0');
   timeReadout.style.color=seconds<10?'#ff3b3b':seconds<20?'#ff9a3c':'#7dff1a';
