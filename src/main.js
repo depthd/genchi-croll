@@ -1,3 +1,4 @@
+import {campaign,save,restartCampaign} from './campaign.js';
 import {pipeline} from './render.js';
 import {config, query} from './config.js';
 import * as THREE from 'three';
@@ -144,7 +145,9 @@ const flashMaterial = new THREE.LineBasicMaterial({ color: '#ffcf82' });
 const hostileMaterial = new THREE.LineBasicMaterial({ color: '#ff5a4e' });
 let audio;
 let state = 'intro';
-let seconds = 35;
+let seconds=config.startTime, bodySpeed=0, transfer=0;
+const bodyId=document.querySelector('#body-id'), progress=document.querySelector('#progress'), delta=document.querySelector('#delta');
+document.querySelector('#new-campaign').onclick=restartCampaign;
 let runTime = 0;
 let ammo = 6;
 let yaw = 0;
@@ -202,7 +205,10 @@ function reset() {
   feet=vertical=jumpQueue=vx=vz=0; grace=config.jumpBuffer; reloadPhase='';
   yaw = 0;
   pitch = 0;
-  seconds = 35;
+  const body=campaign.attempts===0?0:(campaign.attempts%3);
+  seconds=config.startTime+[0,-10,10][body];bodySpeed=[0,.4,-.3][body];
+  bodyId.textContent='ТЕЛО №'+(campaign.attempts+1)+' · '+['Обычный','Лёгкий','Прочный'][body];
+  delta.textContent='';
   runTime = 0;
   ammo = 6;
   cooldown = recoil = reloadTime = hurt = hitMark = 0;
@@ -222,7 +228,7 @@ function reset() {
 
 function enter() {
   if (state === 'playing') return;
-  if (state !== 'paused') reset();
+  if (state !== 'paused') {reset();campaign.attempts++;save();}
   state = 'playing';
   overlay.hidden = true;
   hud.hidden = false;
@@ -288,7 +294,7 @@ function move(dt) {
   const strafe = Number(keys.has('KeyD')) - Number(keys.has('KeyA'));
   const ahead = Number(keys.has('KeyW')) - Number(keys.has('KeyS'));
   const sprint=keys.has('ShiftLeft')||keys.has('ShiftRight');
-  const stride=(sprint?config.sprint:config.walk)/Math.max(1,Math.hypot(strafe,ahead));
+  const stride=((sprint?config.sprint:config.walk)+bodySpeed)/Math.max(1,Math.hypot(strafe,ahead));
   const blend=Math.min(1,dt*24*(grace>0?1:config.airControl));
   vx+=((Math.cos(yaw)*strafe-Math.sin(yaw)*ahead)*stride-vx)*blend;
   vz+=((-Math.sin(yaw)*strafe-Math.cos(yaw)*ahead)*stride-vz)*blend;
@@ -373,12 +379,20 @@ function update(dt) {
   }
   move(dt);
   updateEnemies(dt);
-  timeReadout.textContent = Math.max(0, seconds).toFixed(1);
+  const clock=Math.max(0,seconds);
+  timeReadout.textContent=String(Math.floor(clock/60)).padStart(2,'0')+':'+(clock%60).toFixed(1).padStart(4,'0');
+  timeReadout.style.color=seconds<10?'#ff3b3b':seconds<20?'#ff9a3c':'#7dff1a';
+  progress.value=Math.min(1,Math.max(0,(3.1-camera.position.z)/48));
+  campaign.record=Math.max(campaign.record,progress.value);
   ammoReadout.textContent = '◆'.repeat(ammo) + '◇'.repeat(6 - ammo);
   ammoReadout.setAttribute('aria-label', reloadTime ? 'Перезарядка' : `Патроны: ${ammo} из 6`);
   damage.style.opacity = String(hurt);
   document.querySelector('#crosshair').textContent = hitMark > 0 ? '×' : '+';
-  if (seconds <= 0) menu('lost', 'Отключение', 'Время до деактивации истекло.', 'Повторить');
+  if(seconds<=0){
+    state='transfer'; transfer=0; save(); keys.clear();
+    title.textContent='Тело №'+campaign.attempts+' деактивировано';
+    message.textContent='Сознание переносится… Ближе всех подобрался: '+Math.round(100*campaign.record)+'%';
+  }
   else if (camera.position.z < -44.75 && Math.abs(camera.position.x) < 1.22) {
     menu('won', 'Выход', `До деактивации оставалось ${seconds.toFixed(1)} с.`, 'Ещё раз');
   }
@@ -389,11 +403,18 @@ function resize() {
   camera.updateProjectionMatrix();
 }
 
+let transferClock=performance.now();
 function frame(now) {
   const dt = Math.min(.045, (now - lastFrame) / 1000);
   lastFrame = now;
   if (state === 'playing') update(dt);
-  else damage.style.opacity = '0';
+  else if(state==='transfer'){
+    transfer+=Math.max(0,(now-transferClock)/1000);
+    damage.style.opacity=String(Math.min(1,transfer));
+    if(transfer>=1.8){overlay.hidden=false;overlay.classList.add('transfer');hud.hidden=true;}
+    if(transfer>=3.8){overlay.classList.remove('transfer');enter();}
+  } else damage.style.opacity = '0';
+  transferClock=now;
   const bob = state === 'playing' ? Math.sin(runTime*12)*Math.min(.003,Math.hypot(vx,vz)*.0005) : 0;
   weapon.position.set(.205, -.199 + bob + recoil * .04 - (reloadTime ? .115 : 0), -.44 + recoil * .055);
   weapon.rotation.set(.06 + recoil * .24, -.065, reloadTime ? -.48 : -.04);
@@ -424,7 +445,7 @@ function frame(now) {
 
 start.addEventListener('click', enter);
 window.addEventListener('resize', resize);
-window.addEventListener('blur', () => keys.clear());
+window.addEventListener('blur', () => {keys.clear();if(state==='playing')menu('paused','Пауза','Таймер остановлен.','Продолжить');});
 document.addEventListener('pointerlockchange', () => {
   if (!document.pointerLockElement && state === 'playing') menu('paused', 'Пауза', 'Таймер остановлен.', 'Продолжить');
 });
