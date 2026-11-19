@@ -1,3 +1,4 @@
+import {config, query} from './config.js';
 import * as THREE from 'three';
 import { block, buildCity, glow, randomGenerator, solid } from './city.js';
 
@@ -328,7 +329,7 @@ function updateEnemies(dt) {
 
 function update(dt) {
   runTime += dt;
-  seconds -= dt;
+  if (!query.has('god')) seconds -= dt;
   cooldown = Math.max(0, cooldown - dt);
   recoil = Math.max(0, recoil - 7 * dt);
   hurt = Math.max(0, hurt - 2.5 * dt);
@@ -388,6 +389,10 @@ function frame(now) {
     effects.splice(i, 1);
   }
   renderer.render(scene, camera);
+  if (stats.isConnected && now - (stats.last || 0) > 500) {
+    stats.textContent = Math.round(1 / dt) + ' кадр/с · вызовы ' + renderer.info.render.calls + ' · треуг. ' + renderer.info.render.triangles + ' · враги ' + enemies.length;
+    stats.last = now;
+  }
   requestAnimationFrame(frame);
 }
 
@@ -419,6 +424,25 @@ renderer.domElement.addEventListener('mousedown', (event) => {
   if (event.button === 0) shoot();
 });
 
+const stats = document.createElement('output');
+if (query.has('debug')) {
+  const panel = document.createElement('aside');
+  panel.id = 'debug';
+  panel.append(stats);
+  for (const key of ['walk','sprint','fireDelay','startTime']) {
+    const label = document.createElement('label');
+    label.textContent = key;
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.step = '.1';
+    input.value = config[key];
+    input.onchange = () => { if (input.valueAsNumber > 0) config[key] = input.valueAsNumber; };
+    label.append(input);
+    panel.append(label);
+  }
+  document.body.append(panel);
+}
+window.GAME = {camera, enemies, config, get seconds(){return seconds}, get state(){return state}};
 reset();
 resize();
 requestAnimationFrame(frame);

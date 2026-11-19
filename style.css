@@ -25,3 +25,4 @@ strong { color: var(--amber); font-size: 34px; }
 .setting { display: grid; grid-template-columns: 1fr auto; gap: 8px 14px; align-items: center; width: min(100%, 310px); margin: 20px 0 4px; font-size: 12px; }
 .setting output { color: var(--amber); font-variant-numeric: tabular-nums; }
 .setting input { grid-column: 1 / -1; width: 100%; margin: 0; accent-color: var(--amber); }
+#debug {position:fixed;top:3rem;left:1rem;background:#131a3a;color:#b9ab8c;padding:.5rem;font:12px monospace} #debug label{display:block} #debug input{width:5em}
