@@ -1,3 +1,6 @@
+import {sequence} from './gen/sequencer.js';
+import {advance} from './gen/physics.js';
+import {stream} from './gen/stream.js';
 import {route,drawMap} from './gen/route.js';
 import {campaign,save,restartCampaign} from './campaign.js';
 import {pipeline} from './render.js';
@@ -64,10 +67,11 @@ scene.add(moon);
 const camera = new THREE.PerspectiveCamera(67, 1, .035, 100);
 camera.rotation.order = 'YXZ';
 scene.add(camera);
-const { colliders, ambushes } = buildCity(scene);
-scene.updateMatrixWorld(true);
-const walls = colliders.map((mesh) => new THREE.Box3().setFromObject(mesh));
-
+const plan=route(campaign.seed), segments=sequence(plan);
+const world=stream(scene,plan,segments);
+const colliders=world.colliders, ambushes=[];
+let distance=0;
+const body={x:0,y:0,z:0,vy:0,grace:0};
 let feet=0, vertical=0, grace=0, jumpQueue=0, vx=0, vz=0, inserted=0, reloadPhase='';
 const darkSteel = solid('#1d2447');
 const silver = solid('#8e8990');
@@ -202,10 +206,17 @@ function menu(next, heading, copy, label) {
 }
 
 function reset() {
-  camera.position.set(0, 1.57, 3.1);
+  const shots=[1,3,6,0,2,segments.length-1];
+  const named={start:0,alley:1,fork:6,upper:6,shortcut:3,block:9,yard:segments.length-1};
+  const at=query.get('at')||'';
+  const relay=Number(query.get('relay'))||campaign.relay;
+  const i=Math.min(segments.length-1,Math.max(0,Number(at.match(/^seg(\d+)$/)?.[1]??named[at]??shots[Number(query.get('shot'))-1]??plan.relays[relay-1]??0)));
+  const layer=query.get('layer')||(at==='upper'||query.get('shot')==='3'?'R':at==='shortcut'||query.get('shot')==='2'?'I':'G');
+  const port=segments[i].entry[layer]||segments[i].entry.G,c=plan.cells[i];
+  world.sync(i);Object.assign(body,{x:port.x+c.dx*.3,y:port.y,z:port.z+c.dz*.3,vy:0,grace:config.jumpBuffer});
+  camera.position.set(body.x,body.y+config.eye,body.z);distance=i;
   feet=vertical=jumpQueue=vx=vz=0; grace=config.jumpBuffer; reloadPhase='';
-  yaw = 0;
-  pitch = 0;
+  yaw=Math.atan2(-c.dx,-c.dz);pitch=0;camera.rotation.set(0,yaw,0,'YXZ');
   const body=campaign.attempts===0?0:(campaign.attempts%3);
   seconds=config.startTime+[0,-10,10][body];bodySpeed=[0,.4,-.3][body];
   bodyId.textContent='ТЕЛО №'+(campaign.attempts+1)+' · '+['Обычный','Лёгкий','Прочный'][body];
@@ -302,25 +313,16 @@ function move(dt) {
   vx+=((Math.cos(yaw)*strafe-Math.sin(yaw)*ahead)*stride-vx)*blend;
   vz+=((-Math.sin(yaw)*strafe-Math.cos(yaw)*ahead)*stride-vz)*blend;
   const pos=camera.position;
-  function support(x,z){
-    if(z>5.4)return Infinity;
-    let floor=0;
-    for(const {min,max} of walls) {
-      if(x<=min.x-.29||x>=max.x+.29||z<=min.z-.29||z>=max.z+.29||min.y>=feet+1.7)continue;
-      floor=Math.max(floor,max.y);
-    }
-    return floor;
+  advance(body,world.near,vx*dt,vz*dt,dt,jumpQueue>0);
+  if(body.vy>0)jumpQueue=0;
+  jumpQueue=Math.max(0,jumpQueue-dt);feet=body.y;grace=body.grace;
+  pos.set(body.x,body.y+config.eye,body.z);
+  distance=world.locate(pos);
+  const relay=plan.relays.indexOf(world.index)+1;
+  if(relay>campaign.relay&&Math.abs(distance-world.index)<.4){
+    campaign.relay=relay;save();seconds=Math.min(config.cap,seconds+config.relayBonus);delta.textContent='Ретранслятор · +30';sound('reload');
   }
-  const limit=feet+(grace>0?config.vault:config.step);
-  if(support(pos.x+vx*dt,pos.z)<=limit)pos.x+=vx*dt;
-  if(support(pos.x,pos.z+vz*dt)<=limit)pos.z+=vz*dt;
-  const floor=support(pos.x,pos.z);
-  if(jumpQueue>0&&grace>0){vertical=Math.sqrt(2*config.gravity*config.jump);grace=jumpQueue=0;}
-  vertical-=config.gravity*dt; feet+=vertical*dt;
-  if(feet<=floor&&vertical<=0){feet=floor;vertical=0;grace=config.jumpBuffer;}
-  else grace=Math.max(0,grace-dt);
-  jumpQueue=Math.max(0,jumpQueue-dt);
-  pos.y=feet+config.eye;
+  if(body.y < -12)seconds=0;
   const fov=67+(sprint&&ahead?6:0);
   if(Math.abs(camera.fov-fov)>.05){camera.fov+=(fov-camera.fov)*Math.min(1,dt*9);camera.updateProjectionMatrix();}
   camera.rotation.set(pitch + recoil * .023, yaw, 0, 'YXZ');
@@ -402,7 +404,7 @@ function update(dt) {
   const clock=Math.max(0,seconds);
   timeReadout.textContent=String(Math.floor(clock/60)).padStart(2,'0')+':'+(clock%60).toFixed(1).padStart(4,'0');
   timeReadout.style.color=seconds<10?'#ff3b3b':seconds<20?'#ff9a3c':'#7dff1a';
-  progress.value=Math.min(1,Math.max(0,(3.1-camera.position.z)/48));
+  progress.value=Math.min(1,Math.max(0,distance/segments.length));
   campaign.record=Math.max(campaign.record,progress.value);
   ammoReadout.textContent = '◆'.repeat(ammo) + '◇'.repeat(6 - ammo);
   ammoReadout.setAttribute('aria-label', reloadTime ? 'Перезарядка' : `Патроны: ${ammo} из 6`);
@@ -413,8 +415,9 @@ function update(dt) {
     title.textContent='Тело №'+campaign.attempts+' деактивировано';
     message.textContent='Сознание переносится… Ближе всех подобрался: '+Math.round(100*campaign.record)+'%';
   }
-  else if (camera.position.z < -44.75 && Math.abs(camera.position.x) < 1.22) {
-    menu('won', 'Выход', `До деактивации оставалось ${seconds.toFixed(1)} с.`, 'Ещё раз');
+  else if (distance>segments.length-.14 && Math.abs(body.y)<1.7) {
+    campaign.best=campaign.best===null?runTime:Math.min(runTime,campaign.best);save();
+    menu('won', 'Сектор 02 — скоро', `До деактивации оставалось ${seconds.toFixed(1)} с.`, 'Ещё раз');
   }
 }
 
@@ -455,6 +458,8 @@ function frame(now) {
     effect.line.geometry.dispose();
     effects.splice(i, 1);
   }
+  if(map.isConnected)drawMap(map,plan,camera.position,segments);
+  rain.position.copy(camera.position);
   pixels.render(scene, camera);
   if (stats.isConnected && now - (stats.last || 0) > 500) {
     stats.textContent = Math.round(1 / dt) + ' кадр/с · вызовы ' + renderer.info.render.calls + ' · треуг. ' + renderer.info.render.triangles + ' · враги ' + enemies.length;
@@ -491,7 +496,6 @@ renderer.domElement.addEventListener('mousedown', (event) => {
   if (event.button === 0) shoot();
 });
 
-const plan=route(campaign.seed);
 const map=document.createElement('canvas');
 if(query.get('gen')==='debug'){map.id='gen-map';map.width=map.height=420;document.body.append(map);drawMap(map,plan,camera.position);}
 const stats = document.createElement('output');
@@ -512,8 +516,9 @@ if (query.has('debug')) {
   }
   document.body.append(panel);
 }
-window.GAME = {camera, enemies, config, get seconds(){return seconds}, get state(){return state}};
+window.GAME = {camera, enemies, config,plan,segments,world,body,renderer,campaign, get seconds(){return seconds}, get state(){return state}};
 scene.traverse(o => {if (o.material) for (const m of [].concat(o.material)) pixels.snap(m);});
 reset();
+if(query.has('shot')){overlay.hidden=true;document.body.classList.add('photo');}
 resize();
 requestAnimationFrame(frame);
