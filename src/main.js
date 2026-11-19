@@ -1,3 +1,4 @@
+import {route,drawMap} from './gen/route.js';
 import {campaign,save,restartCampaign} from './campaign.js';
 import {pipeline} from './render.js';
 import {config, query} from './config.js';
@@ -490,6 +491,9 @@ renderer.domElement.addEventListener('mousedown', (event) => {
   if (event.button === 0) shoot();
 });
 
+const plan=route(campaign.seed);
+const map=document.createElement('canvas');
+if(query.get('gen')==='debug'){map.id='gen-map';map.width=map.height=420;document.body.append(map);drawMap(map,plan,camera.position);}
 const stats = document.createElement('output');
 if (query.has('debug')) {
   const panel = document.createElement('aside');
