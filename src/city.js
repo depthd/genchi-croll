@@ -1,3 +1,4 @@
+import {surface} from './surfaces.js';
 import * as THREE from 'three';
 
 export function randomGenerator(seed) {
@@ -86,14 +87,14 @@ function sign(scene, text, color, background, x, y, z, rotation, width) {
 
 export function buildCity(scene) {
   const colliders = [];
-  const street = grime('#4d4b59', 'street');
-  const bricks = grime('#58525a', 'brick');
+  const street = grime('#23242d', 'street');
+  const bricks = grime('#5e2b28', 'brick');
   const concrete = grime('#484550', 'street');
   const tar = solid('#1f2536');
   const pipe = solid('#53494a');
   const frames = solid('#252431');
-  const glass = [glow('#17182a'), glow('#363d65'), glow('#93724d'), glow('#262c49')];
-  const green = new THREE.MeshLambertMaterial({ map: grime('#347b51', 'metal') });
+  const glass = [glow('#17182a'), glow('#363d65'), glow('#ba814e'), glow('#262c49')];
+  const green = new THREE.MeshLambertMaterial({ map: grime('#2f4a2a', 'metal') });
   const rail = solid('#2f7253');
   const black = solid('#242b2e');
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(70, 80), tiled(street, 28, 31));
@@ -145,7 +146,7 @@ export function buildCity(scene) {
       wall(side * 5.5, 2.4, branch.z + 1.1, .62, 4.8, .95, end);
       block(scene, frames, side * 8.44, 1.45, branch.z, .12, 2.9, 1.65);
       block(scene, pipe, side * 6.25, 3.1, branch.z - 1.46, 4.3, .17, .18);
-      block(scene, glow('#a698ff'), side * 6.3, 3.4, branch.z - 1.43, 1.65, .09, .13);
+      block(scene, glow('#4fe7ff'), side * 6.3, 3.4, branch.z - 1.43, 1.65, .09, .13);
       const lamp = new THREE.PointLight('#8c87ff', 40, 13, 1.65);
       lamp.position.set(side * 6.5, 2.8, branch.z - 1);
       
@@ -220,6 +221,17 @@ export function buildCity(scene) {
   const exitLight = new THREE.PointLight('#ff8744', 45, 13, 1.7);
   exitLight.position.set(0, 2.5, -44.8);
   
+  const canvasRed=solid('#803431'), sodium=glow('#ff9a3c');
+  for(let i=0;i<7;i++) {
+    block(scene,surface('shutter',i%3),-3.88,1.25,2-i*6,.12,2.5,3.2);
+    block(scene,canvasRed,3.3,2.95,-i*6,1.3,.18,3.8).rotation.z=.14;
+    block(scene,sodium,3.18,2.45,-i*6-.8,.28,.52,.28);
+    block(scene,surface('poster',i%3),-3.8,1.9,-i*6,.04,.8,.55);
+    block(scene,pipe,0,5.1,-i*6,8.1,.035,.035).rotation.z=.045;
+  }
+  for(let i=0;i<10;i++) block(scene,i%2?sodium:canvasRed,-3.45,1+i*.15,-3,.22,.15,.22);
+  block(scene,surface('stripe'),0,4.1,-27,8,.35,1.6);
+  block(scene,glow('#ff3fa4'),0,3.88,-26.5,6.2,.04,.08);
   const batches = new Map();
   for (const mesh of [...scene.children]) {
     if (mesh.geometry !== cube || Array.isArray(mesh.material)) continue;
