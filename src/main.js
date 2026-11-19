@@ -1,3 +1,4 @@
+import {specialistKind,specialist,updateSpecial} from './specialists.js';
 import {radio} from './radio.js';
 import {steerBot} from './gen/segments.js';
 import {dressing} from './gen/dressing.js';
@@ -159,6 +160,8 @@ function syncEnemies(){
   for(const index of world.active.keys()){
     if(enemies.some(e=>e.segment===index)||defeated.has(index))continue;
     const seg=segments[index];
+    const special=specialistKind(index,segments.length);
+    if(special){enemies.push(specialist(scene,special,seg));continue;}
     if(index===0||index%3===0&&index<segments.length/2)continue;
     enemies.push(createEnemy({...seg.enemy,kind:seg.threat>=3&&index>6?'corner':'bin'},index));
   }
@@ -311,7 +314,7 @@ function shoot() {
   aimRay.setFromCamera(new THREE.Vector2((random()-.5)*spread,(random()-.5)*spread), camera);
   cylinder.rotation.y+=Math.PI/3;
   aimRay.far = 65;
-  const targets = enemies.filter((enemy) => enemy.health > 0).flatMap(({ head, chest }) => [head, chest]);
+  const targets = enemies.filter((enemy) => enemy.health > 0).flatMap(({ head,chest,shield }) => shield?[head,chest,shield]:[head,chest]);
   const hit = aimRay.intersectObjects([...colliders, ...targets], false)[0];
   const end = hit?.point ?? aimRay.ray.at(50, new THREE.Vector3());
   flash.getWorldPosition(from);
@@ -319,7 +322,7 @@ function shoot() {
   if (!hit) return;
   const enemy = enemies.find(({ head, chest }) => hit.object === head || hit.object === chest);
   if (enemy) {
-    enemy.health -= hit.object === enemy.head ? 3 : 1;
+    enemy.health -= hit.object===enemy.head?(enemy.kind==='runner'?2:3):1;
     enemy.group.visible = enemy.health > 0;
     if(enemy.health<=0){defeated.add(enemy.segment);dispatch.say('kill',runTime);const bonus=hit.object===enemy.head?config.headBonus:config.killBonus;seconds=Math.min(config.cap,seconds+bonus);delta.textContent='+'+bonus.toFixed(1);}
     hitMark = .16;
@@ -367,6 +370,13 @@ function move(dt) {
 }
 
 const bullets=[];
+function fireRound(origin,target,damage){
+ const mesh=block(scene,burst,origin.x,origin.y,origin.z,.045,.045,.48);
+ mesh.lookAt(target);bullets.push({mesh,dir:target.clone().sub(origin).normalize(),range:40,damage});
+}
+function takeDamage(amount){
+ if(!query.has('god'))seconds-=amount;delta.textContent='−'+amount.toFixed(1);hurt=.8;
+}
 function projectiles(dt){
   for(let i=bullets.length-1;i>=0;i--){
     const b=bullets[i], step=Math.min(b.range,dt*70);
@@ -376,7 +386,7 @@ function projectiles(dt){
     const next=to.copy(previous).addScaledVector(b.dir,step);
     if(!stopped){
       const closest=new THREE.Line3(previous,next).closestPointToPoint(camera.position,true,from);
-      if(closest.distanceTo(camera.position)<.42){if(!query.has('god'))seconds-=b.damage;delta.textContent='−'+b.damage.toFixed(1);hurt=.8;stopped=true;}
+      if(closest.distanceTo(camera.position)<.42){takeDamage(b.damage);stopped=true;}
     }
     previous.copy(next);b.range-=step;
     if(stopped||b.range<=0){b.mesh.removeFromParent();bullets.splice(i,1);}
@@ -385,6 +395,7 @@ function projectiles(dt){
 function updateEnemies(dt) {
   for (const enemy of enemies) {
     if (enemy.health <= 0) continue;
+    if(enemy.kind){updateSpecial(enemy,camera,segments[enemy.segment],runTime,dt,hasCover,fireRound,takeDamage,()=>sound('empty'));continue;}
     const { group, standing } = enemy;
     group.rotation.y = Math.atan2(camera.position.x - group.position.x, camera.position.z - group.position.z);
     if (enemy.alert === null && camera.position.distanceTo(group.position) < 19) {
@@ -412,8 +423,7 @@ function updateEnemies(dt) {
     if (hasCover(from, to)) continue;
     enemy.cycle = cycle*3+shot;
     enemy.muzzle.visible = true;
-    const mesh=block(scene,burst,from.x,from.y,from.z,.045,.045,.48);
-    mesh.lookAt(to); bullets.push({mesh,dir:to.clone().sub(from).normalize(),range:40,damage:enemy.rifle?3:4});
+    fireRound(from,to,enemy.rifle?3:4);
     sound('enemy');
   }
 }
