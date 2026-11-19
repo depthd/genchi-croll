@@ -71,7 +71,7 @@ scene.add(camera);
 const plan=route(campaign.seed), segments=sequence(plan);
 const world=stream(scene,plan,segments,query.get('gen')==='debug'?null:skin(plan));
 const positionTower=skyline(scene,plan);
-const colliders=world.colliders, ambushes=[];
+const colliders=world.colliders;
 let distance=0;
 const body={x:0,y:0,z:0,vy:0,grace:0};
 let feet=0, vertical=0, grace=0, jumpQueue=0, vx=0, vz=0, inserted=0, reloadPhase='';
@@ -116,7 +116,8 @@ const rain = new THREE.LineSegments(rainGeometry, new THREE.LineBasicMaterial({
 rain.frustumCulled = false;
 scene.add(rain);
 
-const enemies = ambushes.map(({ kind, x, z, peekX, peekZ }) => {
+const enemies=[],defeated=new Set();
+function createEnemy({kind,x,z,peekX,peekZ},segment){
   const standing = kind === 'corner';
   const group = new THREE.Group();
   scene.add(group);
@@ -138,8 +139,22 @@ const enemies = ambushes.map(({ kind, x, z, peekX, peekZ }) => {
   block(group, charcoal, -.30, -.125, .32, .11, .10, .20);
   const muzzle = block(group, burst, -.30, -.12, .48, .19, .14, .19);
   muzzle.visible = false;
-  return { x, z, peekX, peekZ, standing, group, head, chest, muzzle, rifle:standing };
-});
+  const stripe=block(group,amber,.24,.045,.13,.12,.035,.05);
+  group.position.set(x,standing?1.25:.46,z);group.updateMatrixWorld(true);
+  return { x,z,peekX,peekZ,standing,group,head,chest,muzzle,stripe,rifle:standing,segment,health:standing?3:2,alert:null,cycle:-1 };
+}
+function syncEnemies(){
+  for(let i=enemies.length-1;i>=0;i--){
+    const e=enemies[i];if(world.active.has(e.segment))continue;
+    e.group.removeFromParent();enemies.splice(i,1);
+  }
+  for(const index of world.active.keys()){
+    if(enemies.some(e=>e.segment===index)||defeated.has(index))continue;
+    const seg=segments[index];
+    if(index===0||index%3===0&&index<segments.length/2)continue;
+    enemies.push(createEnemy({...seg.enemy,kind:seg.threat>=3&&index>6?'corner':'bin'},index));
+  }
+}
 
 const keys = new Set();
 const ray = new THREE.Raycaster();
@@ -226,14 +241,8 @@ function reset() {
   runTime = 0;
   ammo = 6;
   cooldown = recoil = reloadTime = hurt = hitMark = 0;
-  for (const enemy of enemies) {
-    enemy.group.visible = true;
-    enemy.group.position.set(enemy.x, enemy.standing ? 1.25 : .46, enemy.z);
-    enemy.muzzle.visible = false;
-    enemy.health = enemy.rifle?3:2; enemy.volley=0;
-    enemy.alert = null;
-    enemy.cycle = -1;
-  }
+  for(const e of enemies.splice(0))e.group.removeFromParent();
+  defeated.clear();syncEnemies();
   for(const b of bullets.splice(0))b.mesh.removeFromParent();
   for (const { line } of effects.splice(0)) {
     line.removeFromParent();
@@ -294,7 +303,7 @@ function shoot() {
   if (enemy) {
     enemy.health -= hit.object === enemy.head ? 3 : 1;
     enemy.group.visible = enemy.health > 0;
-    if(enemy.health<=0){const bonus=hit.object===enemy.head?config.headBonus:config.killBonus;seconds=Math.min(config.cap,seconds+bonus);delta.textContent='+'+bonus.toFixed(1);}
+    if(enemy.health<=0){defeated.add(enemy.segment);const bonus=hit.object===enemy.head?config.headBonus:config.killBonus;seconds=Math.min(config.cap,seconds+bonus);delta.textContent='+'+bonus.toFixed(1);}
     hitMark = .16;
     enemy.alert ??= runTime;
   }
@@ -319,7 +328,8 @@ function move(dt) {
   if(body.vy>0)jumpQueue=0;
   jumpQueue=Math.max(0,jumpQueue-dt);feet=body.y;grace=body.grace;
   pos.set(body.x,body.y+config.eye,body.z);
-  distance=world.locate(pos);
+  const previous=world.index;distance=world.locate(pos);
+  if(previous!==world.index)syncEnemies();
   const relay=plan.relays.indexOf(world.index)+1;
   if(relay>campaign.relay&&Math.abs(distance-world.index)<.4){
     campaign.relay=relay;save();seconds=Math.min(config.cap,seconds+config.relayBonus);delta.textContent='Ретранслятор · +30';sound('reload');
