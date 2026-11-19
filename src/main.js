@@ -217,9 +217,9 @@ function reset() {
   camera.position.set(body.x,body.y+config.eye,body.z);distance=i;
   feet=vertical=jumpQueue=vx=vz=0; grace=config.jumpBuffer; reloadPhase='';
   yaw=Math.atan2(-c.dx,-c.dz);pitch=0;camera.rotation.set(0,yaw,0,'YXZ');
-  const body=campaign.attempts===0?0:(campaign.attempts%3);
-  seconds=config.startTime+[0,-10,10][body];bodySpeed=[0,.4,-.3][body];
-  bodyId.textContent='ТЕЛО №'+(campaign.attempts+1)+' · '+['Обычный','Лёгкий','Прочный'][body];
+  const chassis=campaign.attempts===0?0:(campaign.attempts%3);
+  seconds=config.startTime+[0,-10,10][chassis];bodySpeed=[0,.4,-.3][chassis];
+  bodyId.textContent='ТЕЛО №'+(campaign.attempts+1)+' · '+['Обычный','Лёгкий','Прочный'][chassis];
   delta.textContent='';
   runTime = 0;
   ammo = 6;
