@@ -4,8 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Переулок</title>
-  <script type="module" crossorigin src="./assets/index-CvloSPBm.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-BL8Tt3p7.css">
+  <link rel="icon" href="data:,">
+  <script type="module" crossorigin src="./assets/index-DseSZJsa.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-Cl0omCOu.css">
 </head>
 <body>
   <main id="view" aria-label="Игровой переулок"></main>
@@ -14,20 +15,22 @@
   <div id="damage" aria-hidden="true"></div>
   <div id="hud" hidden>
     <div><small>ДО ДЕАКТИВАЦИИ</small><strong id="time">00.0</strong></div>
-    <div id="ammo" aria-label="Патроны"></div>
+    <span id="body-id"></span><progress id="progress" max="1" value="0"></progress><i id="record" aria-hidden="true"></i><output id="delta"></output><div id="ammo" aria-label="Патроны"></div>
   </div>
   <div id="menu">
     <section>
       <h1 id="title">Переулок</h1>
-      <p id="message">Пробеги до оранжевой двери. Берегись засад за баками и дозорных в боковых проёмах.</p>
+      <p id="message">Доберись до башни. Зелёный ретранслятор закрепляет сознание и даёт 30 секунд.</p>
       <div class="setting">
         <label for="sensitivity">Чувствительность мыши</label>
         <output id="sensitivity-value" for="sensitivity">45%</output>
         <input id="sensitivity" type="range" min="10" max="150" step="5" value="45">
       </div>
+      <div class="setting"><label for="volume">Громкость</label><output id="volume-value">65%</output><input id="volume" type="range" min="0" max="100" value="65"></div>
       <button id="start" type="button">Играть <span>↗</span></button>
+      <button id="new-campaign" type="button">Новая кампания</button>
     </section>
   </div>
-  <footer><span><kbd>WASD</kbd> ходьба</span><span><kbd>МЫШЬ</kbd> прицел</span><span><kbd>ЛКМ</kbd> выстрел</span><span><kbd>R</kbd> перезарядка</span><span><kbd>ESC</kbd> пауза</span></footer>
+  <footer><span><kbd>WASD</kbd> бег · Shift спринт · Пробел прыжок</span><span><kbd>МЫШЬ</kbd> прицел</span><span><kbd>ЛКМ</kbd> выстрел</span><span><kbd>R</kbd> перезарядка</span><span><kbd>ESC</kbd> пауза</span></footer>
 </body>
 </html>
